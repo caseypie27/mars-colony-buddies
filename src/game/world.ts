@@ -9,7 +9,7 @@ function rng(seed: number) {
   return () => { seed = (seed * 1664525 + 1013904223) % 4294967296; return seed / 4294967296; };
 }
 
-export interface Building { kind: "dome" | "hab" | "lab" | "greenhouse" | "lander" | "antenna" | "solar" | "rover"; x: number; y: number; w: number; h: number }
+export interface Building { kind: "dome" | "hab" | "lab" | "greenhouse" | "lander" | "antenna" | "solar" | "rover" | "drill"; x: number; y: number; w: number; h: number }
 
 export const BUILDINGS: Building[] = [
   { kind: "lander", x: 1560, y: 1660, w: 170, h: 150 },
@@ -21,6 +21,7 @@ export const BUILDINGS: Building[] = [
   { kind: "solar", x: 700, y: 800, w: 300, h: 180 },
   { kind: "solar", x: 2200, y: 1800, w: 300, h: 180 },
   { kind: "rover", x: 900, y: 1850, w: 140, h: 90 },
+  { kind: "drill", x: 2750, y: 1250, w: 130, h: 150 },
 ];
 
 export const LANDMARKS: Landmark[] = [
@@ -30,6 +31,7 @@ export const LANDMARKS: Landmark[] = [
   { id: "lab", name: "Research Lab", x: 2150, y: 1425, r: 200, pip: "In the Research Lab we study Martian rocks to learn about the planet's past." },
   { id: "antenna", name: "Comms Antenna", x: 2510, y: 860, r: 220, pip: "The antenna sends messages to Earth. Signals take up to 20 minutes to arrive!" },
   { id: "solar", name: "Solar Farm", x: 850, y: 890, r: 240, pip: "Solar panels turn sunlight into energy. Mars gets less sunlight than Earth!" },
+  { id: "drill", name: "Ice Drill", x: 2815, y: 1330, r: 200, pip: "The Ice Drill digs up frozen water under the ground. Water is precious on Mars!" },
   { id: "crater", name: "Big Crater", x: 2600, y: 1950, r: 260, pip: "Whoa, a crater! It formed when a space rock crashed into Mars long ago." },
 ];
 
@@ -184,6 +186,12 @@ function drawBuilding(ctx: CanvasRenderingContext2D, b: Building) {
       rr(ctx, x + 5, y + 20, w - 10, 50, 10, "#facc15");
       rr(ctx, x + w - 50, y + 28, 34, 30, 6, "#38bdf8");
       ctx.beginPath(); ctx.moveTo(x + 30, y + 30); ctx.lineTo(x + 20, y - 5); ctx.stroke();
+      break;
+    case "drill":
+      rr(ctx, x + 10, y + h - 50, w - 20, 45, 10, "#e5e7eb");
+      ctx.beginPath(); ctx.moveTo(x + w / 2 - 30, y + h - 50); ctx.lineTo(x + w / 2, y); ctx.lineTo(x + w / 2 + 30, y + h - 50); ctx.closePath(); ctx.fillStyle = "#f59e0b"; ctx.fill(); ctx.stroke();
+      for (let i = 1; i < 4; i++) { ctx.beginPath(); ctx.moveTo(x + w / 2 - 30 * (i / 4), y + (h - 50) * (i / 4)); ctx.lineTo(x + w / 2 + 30 * (i / 4), y + (h - 50) * (i / 4)); ctx.stroke(); }
+      rr(ctx, x + 20, y + h - 40, 34, 24, 6, "#7dd3fc");
       break;
   }
 }
