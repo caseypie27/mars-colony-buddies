@@ -49,7 +49,7 @@ export function MarsGame() {
       const now = performance.now(), dt = Math.min(1, (now - last) / 1000); last = now;
       const prev = simRef.current, next = reward(tick(prev, dt));
       if (next !== prev) {
-        setSim(next);
+        simRef.current = next; setSim(next);
         if (next.status !== prev.status) {
           if (next.status === "summary") setPip(`Sol ${next.sol} is over! Check our supplies and get ready for tomorrow.`);
           if (next.status === "won") setPip("We survived 10 Sols on Mars! You're a true Mars Base Buddy!");
@@ -71,7 +71,7 @@ export function MarsGame() {
   const doAction = (aid: string) => {
     const r = act(simRef.current, aid), ok = r.sim !== simRef.current;
     beep(ok ? "ok" : "fail"); setFlash({ id: Date.now(), ok });
-    const n = reward(r.sim); setSim(n); saveSim(n); if (r.msg) setPip(ok ? r.msg : `❌ ${r.msg}`);
+    const n = reward(r.sim); simRef.current = n; setSim(n); saveSim(n); if (r.msg) setPip(ok ? r.msg : `❌ ${r.msg}`);
   };
 
   useEffect(() => {
