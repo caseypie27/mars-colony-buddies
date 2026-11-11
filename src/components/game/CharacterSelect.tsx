@@ -13,7 +13,7 @@ function Preview({ c }: { c: Character }) {
       const t = (now - start) / 1000;
       ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.clearRect(0, 0, cv.width, cv.height);
       ctx.translate(cv.width / 2, cv.height - 20);
-      const d = dirs[Math.floor(t / 2.5) % 4];
+      const d = dirs[Math.floor(t / 2.5) % 4] ?? "down";
       drawAstronaut(ctx, c, d, t, d !== "down", 2.2);
       raf = requestAnimationFrame(loop);
     };

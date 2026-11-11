@@ -198,7 +198,7 @@ export function drawDynamic(ctx: CanvasRenderingContext2D, t: number, visited: S
   // solar shimmer
   ctx.fillStyle = "rgba(255,255,255,0.35)";
   const sx = ((t * 120) % 400) - 50;
-  for (const [bx, by] of [[700, 800], [2200, 1800]]) { ctx.save(); ctx.beginPath(); ctx.rect(bx, by, 300, 150); ctx.clip(); ctx.beginPath(); ctx.moveTo(bx + sx, by); ctx.lineTo(bx + sx + 30, by); ctx.lineTo(bx + sx - 30, by + 150); ctx.lineTo(bx + sx - 60, by + 150); ctx.fill(); ctx.restore(); }
+  for (const [bx, by] of [[700, 800], [2200, 1800]] as const) { ctx.save(); ctx.beginPath(); ctx.rect(bx, by, 300, 150); ctx.clip(); ctx.beginPath(); ctx.moveTo(bx + sx, by); ctx.lineTo(bx + sx + 30, by); ctx.lineTo(bx + sx - 30, by + 150); ctx.lineTo(bx + sx - 60, by + 150); ctx.fill(); ctx.restore(); }
   // landmark beacons for unvisited spots
   for (const l of LANDMARKS) {
     if (visited.has(l.id)) continue;
