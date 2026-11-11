@@ -198,7 +198,7 @@ function drawBuilding(ctx: CanvasRenderingContext2D, b: Building) {
       ctx.fillStyle = ink; ctx.font = "bold 22px sans-serif"; ctx.textAlign = "center"; ctx.fillText("☢", x + w / 2, y + h - 20);
       break;
     case "storage":
-      for (let i = 0; i < 3; i++) { rr(ctx, x + 5 + i * 55, y + 10, 50, h - 15, 22, ["#7dd3fc", "#a7f3d0", "#fde68a"][i]); ctx.fillStyle = "rgba(30,27,58,0.25)"; ctx.fillRect(x + 12 + i * 55, y + 50, 36, 6); }
+      for (let i = 0; i < 3; i++) { rr(ctx, x + 5 + i * 55, y + 10, 50, h - 15, 22, ["#7dd3fc", "#a7f3d0", "#fde68a"][i] ?? "#fff"); ctx.fillStyle = "rgba(30,27,58,0.25)"; ctx.fillRect(x + 12 + i * 55, y + 50, 36, 6); }
       break;
     case "drill":
       rr(ctx, x + 10, y + h - 50, w - 20, 45, 10, "#e5e7eb");
