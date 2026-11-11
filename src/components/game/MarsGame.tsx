@@ -40,7 +40,7 @@ export function MarsGame() {
   const toastRef = useRef(0);
   simRef.current = sim;
 
-  useEffect(() => { const c = loadCharacter(); setCharacter(c); setPlaying(!!c); setSim(loadSim() ?? newSim()); setReady(true); }, []);
+  useEffect(() => { const c = loadCharacter(); setCharacter(c); setPlaying(!!c); const ls = loadSim() ?? newSim(); toastRef.current = ls.objective; setSim(ls); setReady(true); }, []);
 
   // Simulation clock + station proximity
   useEffect(() => {
@@ -85,14 +85,14 @@ export function MarsGame() {
 
   if (!ready) return <div className="space-bg fixed inset-0" />;
   if (!playing || !character)
-    return <CharacterSelect initial={character} onStart={(c) => { saveCharacter(c); const s = newSim(); saveSim(s); setSim(s); setCharacter(c); setFound([]); setPip(WELCOME); setPlaying(true); }} />;
+    return <CharacterSelect initial={character} onStart={(c) => { saveCharacter(c); const s = newSim(); toastRef.current = 0; saveSim(s); setSim(s); setCharacter(c); setFound([]); setPip(WELCOME); setPlaying(true); }} />;
 
   const onDiscover = (l: Landmark) => setFound((f) => { const n = [...f, l.id]; setPip(`${l.name}: ${l.pip}`); return n; });
   const ev = eventOf(sim), info = EVENT_INFO[ev];
   const warn = warnings(sim);
   const beginSol = () => { const s = nextSol(sim); setSim(s); saveSim(s); setBanner((b) => b + 1); const i = EVENT_INFO[eventOf(s)]; setPip(`Sol ${s.sol}: ${i.label}! ${i.tip}`); };
   const goal = OBJECTIVES[sim.objective];
-  const restart = () => { const s = newSim(); setSim(s); saveSim(s); setPip(WELCOME); setBanner((b) => b + 1); };
+  const restart = () => { const s = newSim(); toastRef.current = 0; setSim(s); saveSim(s); setPip(WELCOME); setBanner((b) => b + 1); };
   const res = [
     { name: "Oxygen", icon: "🫧", value: (sim.oxygen / sim.capacity) * 100, raw: sim.oxygen, cls: "bg-res-oxygen", low: 25 },
     { name: "Water", icon: "💧", value: (sim.water / sim.capacity) * 100, raw: sim.water, cls: "bg-res-water", low: 20 },
