@@ -5,12 +5,12 @@ import type { Character, Dir, Landmark } from "@/game/types";
 
 export interface InputState { x: number; y: number }
 
-interface Props { character: Character; input: React.MutableRefObject<InputState>; onDiscover: (l: Landmark) => void }
+interface Props { character: Character; input: React.MutableRefObject<InputState>; onDiscover: (l: Landmark) => void; posRef?: React.MutableRefObject<{ x: number; y: number }> }
 
 const SPEED = 260;
 const R = 16;
 
-export function GameCanvas({ character, input, onDiscover }: Props) {
+export function GameCanvas({ character, input, onDiscover, posRef }: Props) {
   const ref = useRef<HTMLCanvasElement>(null);
   const discoverRef = useRef(onDiscover);
   discoverRef.current = onDiscover;
@@ -57,6 +57,7 @@ export function GameCanvas({ character, input, onDiscover }: Props) {
         if (!blocked(p.x, ny)) p.y = ny;
         p.dir = Math.abs(dx) > Math.abs(dy) ? (dx < 0 ? "left" : "right") : dy < 0 ? "up" : "down";
       }
+      if (posRef) { posRef.current.x = p.x; posRef.current.y = p.y; }
       for (const l of LANDMARKS) if (!visited.has(l.id) && Math.hypot(p.x - l.x, p.y - l.y) < l.r) { visited.add(l.id); discoverRef.current(l); }
 
       const vw = window.innerWidth, vh = window.innerHeight;
@@ -75,7 +76,7 @@ export function GameCanvas({ character, input, onDiscover }: Props) {
     };
     raf = requestAnimationFrame(frame);
     return () => { cancelAnimationFrame(raf); window.removeEventListener("resize", resize); window.removeEventListener("keydown", kd); window.removeEventListener("keyup", ku); window.removeEventListener("blur", blur); };
-  }, [character, input]);
+  }, [character, input, posRef]);
 
   return <canvas ref={ref} className="absolute inset-0 block h-full w-full" aria-label="Mars colony game world" />;
 }

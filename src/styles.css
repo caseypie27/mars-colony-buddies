@@ -192,3 +192,10 @@ html, body { margin: 0; width: 100vw; height: 100vh; height: 100dvh; overflow: h
 @keyframes blink { 50% { opacity: 0.3; } }
 .touch-only { display: none; pointer-events: auto; }
 @media (pointer: coarse) { .touch-only { display: block; } .desktop-only { display: none; } }
+:root { --res-shield: oklch(0.75 0.15 320); --res-condition: oklch(0.78 0.04 260); --res-material: oklch(0.72 0.05 60); }
+@theme inline { --color-res-shield: var(--res-shield); --color-res-condition: var(--res-condition); --color-res-material: var(--res-material); }
+.weather-dust { background: radial-gradient(ellipse at center, oklch(0.7 0.14 55 / 0.15), oklch(0.6 0.15 45 / 0.5)); animation: dust-drift 4s ease-in-out infinite alternate; }
+.weather-flare { box-shadow: inset 0 0 120px oklch(0.75 0.2 330 / 0.55); animation: blink 2.5s ease-in-out infinite; }
+@keyframes dust-drift { to { opacity: 0.7; } }
+.sol-banner { animation: sol-in 3.2s ease-out forwards; }
+@keyframes sol-in { 0% { opacity: 0; transform: scale(0.8); } 15%, 75% { opacity: 1; transform: scale(1); } 100% { opacity: 0; } }
