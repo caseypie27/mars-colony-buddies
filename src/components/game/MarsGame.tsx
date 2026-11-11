@@ -46,7 +46,7 @@ export function MarsGame() {
           <div className="hud-panel pointer-events-auto rounded-2xl px-3 py-2">
             <div className="font-display text-base font-bold leading-tight sm:text-xl">🪐 Mars Base Buddies</div>
             <div className="flex items-center gap-2 text-xs sm:text-sm">
-              <span className="rounded-full bg-primary px-2 font-bold text-primary-foreground">SOL {sol}</span>
+              <span className="whitespace-nowrap rounded-full bg-primary px-2 font-bold text-primary-foreground">SOL {sol}</span>
               <button onClick={() => { resetGame(); setPlaying(false); setSol(1); }} className="underline decoration-dotted hover:text-accent">Restart / switch astronaut</button>
             </div>
           </div>
@@ -59,7 +59,7 @@ export function MarsGame() {
             <div className="mt-1 text-xs text-hud-muted">Places found: {found.length}/{LANDMARKS.length}</div>
           </div>
         </div>
-        <div className="hud-panel mx-auto mt-2 flex w-fit gap-3 rounded-2xl px-3 py-1.5 md:hidden">
+        <div className="hud-panel mx-auto mt-2 flex w-fit gap-2 rounded-2xl px-3 py-1.5 md:hidden">
           {RESOURCES.map((r) => <Res key={r.name} {...r} />)}
         </div>
         <div className="absolute inset-x-2 bottom-2 flex items-end justify-between gap-2 sm:inset-x-3 sm:bottom-3">
@@ -83,7 +83,7 @@ function Res({ name, icon, value, cls }: { name: string; icon: string; value: nu
     <div className="flex items-center gap-1.5" title={name}>
       <span className="text-base">{icon}</span>
       <div className="hidden text-[10px] font-bold uppercase sm:block">{name}</div>
-      <div className="h-2 w-10 overflow-hidden rounded-full bg-hud-ink/60 sm:w-14"><div className={`h-full ${cls}`} style={{ width: `${value}%` }} /></div>
+      <div className="h-2 w-7 overflow-hidden rounded-full bg-hud-ink/60 sm:w-14"><div className={`h-full ${cls}`} style={{ width: `${value}%` }} /></div>
       <span className="text-xs font-bold">{value}</span>
     </div>
   );

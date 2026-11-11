@@ -51,7 +51,7 @@ export function getDeco(): Deco {
 
 /** Solid rectangles the astronaut cannot walk through. */
 export function getObstacles(): Rect[] {
-  const obs: Rect[] = BUILDINGS.map((b) => ({ x: b.x + 10, y: b.y + b.h * 0.35, w: b.w - 20, h: b.h * 0.6 }));
+  const obs: Rect[] = BUILDINGS.map((b) => ({ x: b.x + 10, y: b.y + b.h * 0.1, w: b.w - 20, h: b.h * 0.85 }));
   for (const k of getDeco().rocks) if (k.r > 16) obs.push({ x: k.x - k.r * 0.8, y: k.y - k.r * 0.5, w: k.r * 1.6, h: k.r });
   return obs;
 }
