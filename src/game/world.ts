@@ -1,4 +1,5 @@
 import type { Landmark, Rect } from "./types";
+import { SITES } from "./sim";
 
 export const WORLD_W = 3200;
 export const WORLD_H = 2400;
@@ -127,7 +128,51 @@ export function renderStaticWorld(): HTMLCanvasElement {
   ctx.strokeStyle = "#facc15"; ctx.lineWidth = 6; ctx.beginPath(); ctx.arc(1645, 1745, 110, 0, 7); ctx.stroke();
   ctx.lineWidth = 2.5; ctx.strokeStyle = ink;
   for (const b of BUILDINGS) drawBuilding(ctx, b);
+  for (const site of SITES) drawSite(ctx, site.kind, site.x, site.y);
   return cv;
+}
+
+function drawSite(ctx: CanvasRenderingContext2D, kind: string, x: number, y: number) {
+  ctx.strokeStyle = ink; ctx.lineWidth = 2.5;
+  switch (kind) {
+    case "ice":
+      ctx.fillStyle = "#a83a1a"; ctx.beginPath(); ctx.ellipse(x, y, 110, 70, 0, 0, 7); ctx.fill();
+      ctx.fillStyle = "#e0f2fe"; ctx.beginPath(); ctx.ellipse(x, y + 5, 70, 40, 0, 0, 7); ctx.fill(); ctx.stroke();
+      ctx.fillStyle = "#7dd3fc"; for (const [a, b] of [[-30, 0], [20, 10], [0, -12]]) { ctx.beginPath(); ctx.ellipse(x + a, y + b, 14, 6, 0.3, 0, 7); ctx.fill(); }
+      break;
+    case "layers":
+      for (let i = 0; i < 5; i++) { ctx.fillStyle = ["#7c2d12", "#b45309", "#9a3412", "#d97706", "#78350f"][i] ?? "#7c2d12"; ctx.beginPath(); ctx.moveTo(x - 160 + i * 12, y - 60 + i * 22); ctx.lineTo(x + 160 - i * 12, y - 60 + i * 22); ctx.lineTo(x + 160 - i * 12, y - 38 + i * 22); ctx.lineTo(x - 160 + i * 12, y - 38 + i * 22); ctx.fill(); }
+      ctx.strokeRect(x - 160, y - 60, 320, 110);
+      break;
+    case "soil":
+      ctx.fillStyle = "#b91c1c"; ctx.beginPath(); ctx.ellipse(x, y, 90, 45, 0.2, 0, 7); ctx.fill();
+      ctx.fillStyle = "#fca5a5"; for (let i = 0; i < 25; i++) ctx.fillRect(x - 70 + ((i * 37) % 140), y - 30 + ((i * 23) % 60), 4, 4);
+      break;
+    case "dunes":
+      ctx.strokeStyle = "rgba(255,200,140,0.8)"; ctx.lineWidth = 6;
+      for (let i = 0; i < 6; i++) { ctx.beginPath(); for (let k = -180; k <= 180; k += 20) ctx.lineTo(x + k, y - 70 + i * 26 + Math.sin(k * 0.04 + i) * 8); ctx.stroke(); }
+      break;
+    case "meteorite":
+      ctx.fillStyle = "#8a2c12"; ctx.beginPath(); ctx.ellipse(x, y + 10, 70, 35, 0, 0, 7); ctx.fill();
+      ctx.fillStyle = "#6b7280"; ctx.beginPath(); ctx.arc(x, y, 26, 0, 7); ctx.fill(); ctx.stroke();
+      ctx.fillStyle = "#e5e7eb"; ctx.beginPath(); ctx.arc(x - 8, y - 8, 7, 0, 7); ctx.fill();
+      break;
+    case "plain":
+      ctx.strokeStyle = "rgba(255,255,255,0.6)"; ctx.setLineDash([14, 10]); ctx.strokeRect(x - 120, y - 70, 240, 140); ctx.setLineDash([]);
+      ctx.strokeStyle = ink; ctx.beginPath(); ctx.moveTo(x, y + 20); ctx.lineTo(x, y - 50); ctx.stroke();
+      ctx.fillStyle = "#22d3ee"; ctx.beginPath(); ctx.moveTo(x, y - 50); ctx.lineTo(x + 34, y - 40); ctx.lineTo(x, y - 30); ctx.fill(); ctx.stroke();
+      break;
+    case "weather":
+      ctx.fillStyle = "#9a3412"; ctx.beginPath(); ctx.ellipse(x, y + 20, 120, 40, 0, 0, 7); ctx.fill();
+      ctx.beginPath(); ctx.moveTo(x, y + 20); ctx.lineTo(x, y - 60); ctx.stroke();
+      ctx.fillStyle = "#fde68a"; ctx.beginPath(); ctx.arc(x, y - 60, 8, 0, 7); ctx.fill(); ctx.stroke();
+      break;
+    case "cave":
+      ctx.fillStyle = "#7c2d12"; ctx.beginPath(); ctx.ellipse(x, y, 130, 70, 0, 0, 7); ctx.fill(); ctx.stroke();
+      ctx.fillStyle = "#1c0a05"; ctx.beginPath(); ctx.ellipse(x, y + 15, 60, 35, 0, Math.PI, 0); ctx.fill();
+      break;
+  }
+  ctx.strokeStyle = ink; ctx.lineWidth = 2.5;
 }
 
 function drawBuilding(ctx: CanvasRenderingContext2D, b: Building) {
@@ -220,6 +265,9 @@ export function drawDynamic(ctx: CanvasRenderingContext2D, t: number, visited: S
   ctx.fillStyle = "rgba(255,255,255,0.35)";
   const sx = ((t * 120) % 400) - 50;
   for (const [bx, by] of [[700, 800], [2200, 1800]] as const) { ctx.save(); ctx.beginPath(); ctx.rect(bx, by, 300, 150); ctx.clip(); ctx.beginPath(); ctx.moveTo(bx + sx, by); ctx.lineTo(bx + sx + 30, by); ctx.lineTo(bx + sx - 30, by + 150); ctx.lineTo(bx + sx - 60, by + 150); ctx.fill(); ctx.restore(); }
+  // drifting dust motes
+  ctx.fillStyle = "rgba(255,210,170,0.35)";
+  for (let i = 0; i < 90; i++) { const mx = ((i * 397 + t * (20 + (i % 5) * 8)) % WORLD_W), my = SKY_H + ((i * 733 + Math.sin(t + i) * 30) % (WORLD_H - SKY_H)); ctx.fillRect(mx, my, 3, 3); }
   // landmark beacons for unvisited spots
   for (const l of LANDMARKS) {
     if (visited.has(l.id)) continue;

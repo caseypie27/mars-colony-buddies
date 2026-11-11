@@ -5,12 +5,12 @@ import type { Character, Dir, Landmark } from "@/game/types";
 
 export interface InputState { x: number; y: number }
 
-interface Props { character: Character; input: React.MutableRefObject<InputState>; onDiscover: (l: Landmark) => void; posRef?: React.MutableRefObject<{ x: number; y: number }> }
+interface Props { character: Character; input: React.MutableRefObject<InputState>; onDiscover: (l: Landmark) => void; posRef?: React.MutableRefObject<{ x: number; y: number }>; markersRef?: React.MutableRefObject<{ x: number; y: number }[]>; speedRef?: React.MutableRefObject<number> }
 
 const SPEED = 260;
 const R = 16;
 
-export function GameCanvas({ character, input, onDiscover, posRef }: Props) {
+export function GameCanvas({ character, input, onDiscover, posRef, markersRef, speedRef }: Props) {
   const ref = useRef<HTMLCanvasElement>(null);
   const discoverRef = useRef(onDiscover);
   discoverRef.current = onDiscover;
@@ -52,7 +52,7 @@ export function GameCanvas({ character, input, onDiscover, posRef }: Props) {
       p.moving = mag > 0.15;
       if (p.moving) {
         if (mag > 1) { dx /= mag; dy /= mag; }
-        const nx = p.x + dx * SPEED * dt, ny = p.y + dy * SPEED * dt;
+        const nx = p.x + dx * SPEED * (speedRef?.current ?? 1) * dt, ny = p.y + dy * SPEED * (speedRef?.current ?? 1) * dt;
         if (!blocked(nx, p.y)) p.x = nx;
         if (!blocked(p.x, ny)) p.y = ny;
         p.dir = Math.abs(dx) > Math.abs(dy) ? (dx < 0 ? "left" : "right") : dy < 0 ? "up" : "down";
@@ -71,12 +71,19 @@ export function GameCanvas({ character, input, onDiscover, posRef }: Props) {
       ctx.setTransform(dpr * zoom, 0, 0, dpr * zoom, dpr * (vw / 2 - cx * zoom), dpr * (vh / 2 - cy * zoom));
       ctx.drawImage(world, 0, 0);
       drawDynamic(ctx, t, visited);
+      for (const m of markersRef?.current ?? []) {
+        const pulse = 1 + Math.sin(t * 4) * 0.15;
+        ctx.strokeStyle = "rgba(34,211,238,0.9)"; ctx.lineWidth = 4; ctx.beginPath(); ctx.arc(m.x, m.y, 50 * pulse, 0, 7); ctx.stroke();
+        ctx.fillStyle = "#22d3ee"; ctx.strokeStyle = "#1e1b3a"; ctx.lineWidth = 3; const yy = m.y - 90 + Math.sin(t * 3) * 6;
+        ctx.beginPath(); ctx.moveTo(m.x, yy - 16); ctx.lineTo(m.x + 14, yy); ctx.lineTo(m.x, yy + 16); ctx.lineTo(m.x - 14, yy); ctx.closePath(); ctx.fill(); ctx.stroke();
+        ctx.fillStyle = "#1e1b3a"; ctx.font = "bold 16px sans-serif"; ctx.textAlign = "center"; ctx.fillText("?", m.x, yy + 6);
+      }
       ctx.save(); ctx.translate(p.x, p.y); drawAstronaut(ctx, character, p.dir, t, p.moving); ctx.restore();
       raf = requestAnimationFrame(frame);
     };
     raf = requestAnimationFrame(frame);
     return () => { cancelAnimationFrame(raf); window.removeEventListener("resize", resize); window.removeEventListener("keydown", kd); window.removeEventListener("keyup", ku); window.removeEventListener("blur", blur); };
-  }, [character, input, posRef]);
+  }, [character, input, posRef, markersRef, speedRef]);
 
   return <canvas ref={ref} className="absolute inset-0 block h-full w-full" aria-label="Mars colony game world" />;
 }
