@@ -133,7 +133,7 @@ export function MarsGame() {
             {sim.status === "summary" && <>
               <div className="font-display text-2xl font-bold">Sol {sim.sol} complete! 🌙</div>
               <p className="mt-1 text-sm text-hud-muted">Time is paused. Walk to buildings to switch systems, repair or upgrade before tomorrow.</p>
-              <div className="mt-3 rounded-xl bg-hud-ink/40 p-2 text-sm"><b>Tomorrow: {EVENT_INFO[SOL_EVENTS[sim.sol]].icon} {EVENT_INFO[SOL_EVENTS[sim.sol]].label}</b><div className="text-xs">{EVENT_INFO[SOL_EVENTS[sim.sol]].tip}</div></div>
+              <div className="mt-3 rounded-xl bg-hud-ink/40 p-2 text-sm"><b>Tomorrow: {EVENT_INFO[SOL_EVENTS[sim.sol] ?? "clear"].icon} {EVENT_INFO[SOL_EVENTS[sim.sol] ?? "clear"].label}</b><div className="text-xs">{EVENT_INFO[SOL_EVENTS[sim.sol] ?? "clear"].tip}</div></div>
               <button onClick={beginSol} className="start-btn mt-3 rounded-xl px-5 py-2 font-bold">Begin Sol {sim.sol + 1}</button>
             </>}
             {sim.status !== "summary" && <>
