@@ -37,6 +37,7 @@ export function MarsGame() {
   const input = useRef<InputState>({ x: 0, y: 0 });
   const pos = useRef({ x: 0, y: 0 });
   const simRef = useRef(sim);
+  const toastRef = useRef(0);
   simRef.current = sim;
 
   useEffect(() => { const c = loadCharacter(); setCharacter(c); setPlaying(!!c); setSim(loadSim() ?? newSim()); setReady(true); }, []);
@@ -65,7 +66,7 @@ export function MarsGame() {
 
   function reward(s: Sim): Sim {
     const r = checkObjective(s);
-    if (r.done) { beep("goal"); setToast({ id: Date.now(), text: `🏆 Objective complete: ${r.done.title}! +10 🔩` }); setPip(`Great job! "${r.done.title}" done. Here are 10 bonus materials!`); }
+    if (r.done && r.sim.objective > toastRef.current) { toastRef.current = r.sim.objective; beep("goal"); setToast({ id: r.sim.objective, text: `🏆 Objective complete: ${r.done.title}! +10 🔩` }); setPip(`Great job! "${r.done.title}" done. Here are 10 bonus materials!`); }
     return r.sim;
   }
   const doAction = (aid: string) => {
