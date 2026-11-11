@@ -127,7 +127,7 @@ export function tick(prev: Sim, dt: number): Sim {
       const pool: EventId[] = ["malfunction", "water", "breakthrough", "radiation", "dustdevil"];
       const kind = pool[Math.floor(rnd(s, 3) * pool.length)] ?? "water";
       const targets: Breakable[] = ["oxygen", "greenhouse", "drill", "panels"];
-      s.event = { kind, target: kind === "malfunction" ? targets[Math.floor(rnd(s, 4) * 4)] : undefined };
+      s.event = kind === "malfunction" ? { kind, target: targets[Math.floor(rnd(s, 4) * 4)] ?? "drill" } : { kind };
       addLog(s, EVENTS[kind].icon, `Event: ${EVENTS[kind].title}`);
     }
   }

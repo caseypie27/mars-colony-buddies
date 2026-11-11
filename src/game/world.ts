@@ -138,7 +138,7 @@ function drawSite(ctx: CanvasRenderingContext2D, kind: string, x: number, y: num
     case "ice":
       ctx.fillStyle = "#a83a1a"; ctx.beginPath(); ctx.ellipse(x, y, 110, 70, 0, 0, 7); ctx.fill();
       ctx.fillStyle = "#e0f2fe"; ctx.beginPath(); ctx.ellipse(x, y + 5, 70, 40, 0, 0, 7); ctx.fill(); ctx.stroke();
-      ctx.fillStyle = "#7dd3fc"; for (const [a, b] of [[-30, 0], [20, 10], [0, -12]]) { ctx.beginPath(); ctx.ellipse(x + a, y + b, 14, 6, 0.3, 0, 7); ctx.fill(); }
+      ctx.fillStyle = "#7dd3fc"; for (const [a, b] of [[-30, 0], [20, 10], [0, -12]] as const) { ctx.beginPath(); ctx.ellipse(x + a, y + b, 14, 6, 0.3, 0, 7); ctx.fill(); }
       break;
     case "layers":
       for (let i = 0; i < 5; i++) { ctx.fillStyle = ["#7c2d12", "#b45309", "#9a3412", "#d97706", "#78350f"][i] ?? "#7c2d12"; ctx.beginPath(); ctx.moveTo(x - 160 + i * 12, y - 60 + i * 22); ctx.lineTo(x + 160 - i * 12, y - 60 + i * 22); ctx.lineTo(x + 160 - i * 12, y - 38 + i * 22); ctx.lineTo(x - 160 + i * 12, y - 38 + i * 22); ctx.fill(); }
