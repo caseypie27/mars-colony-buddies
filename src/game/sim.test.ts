@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { act, checkAchievements, resolveEvent, checkObjective, DAY_SECONDS, newSim, nextSol, tick } from "./sim";
+import { report, act, checkAchievements, resolveEvent, checkObjective, DAY_SECONDS, newSim, nextSol, tick } from "./sim";
 
 const runDay = (s = newSim()) => { for (let t = 0; t < DAY_SECONDS * 3 && s.status === "day"; t += 0.5) { if (s.event) s = resolveEvent(s, 1).sim; s = tick(s, 0.5); } return s; };
 
@@ -61,5 +61,17 @@ describe("survival sim", () => {
     const s = tick({ ...newSim(), broken: "greenhouse" }, 1);
     expect(s.unpowered).toContain("greenhouse");
     expect(act(s, "fix-broken").sim.broken).toBeNull();
+  });
+  it("running out of oxygen damages the base gradually and is named as the cause", () => {
+    let s = { ...newSim(), oxygen: 0, systems: { oxygen: false, greenhouse: false, drill: false } };
+    s = tick(s, 10);
+    expect(s.status).toBe("day"); expect(s.condition).toBeGreaterThan(90);
+    for (let i = 0; i < 600 && s.status === "day"; i++) { if (s.event) s = { ...s, event: null }; s = nextSol(tick(s, 1)); }
+    expect(s.status).toBe("lost");
+    expect(report(s).cause?.title).toBe("Oxygen ran out");
+  });
+  it("a well-managed win is a sustainable outpost", () => {
+    const s = { ...newSim(), status: "won" as const, objective: 9, condition: 90 };
+    expect(report(s).grade).toContain("Sustainable");
   });
 });

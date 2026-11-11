@@ -23,6 +23,7 @@ export interface Sim {
   seed: number; event: { kind: EventId; target?: Breakable } | null; eventSol: number; eventsHandled: number;
   broken: Breakable | null; discoveries: string[]; reviewed: string[]; extraSites: string[];
   achievements: string[]; foodMade: number; log: LogEntry[];
+  waterMade: number; solarMade: number; energyUsed: number; peakExposure: number; powerOut: number; damage: Record<string, number>;
 }
 export interface LogEntry { sol: number; icon: string; text: string }
 export type Breakable = "oxygen" | "greenhouse" | "drill" | "panels";
@@ -44,7 +45,7 @@ export function newSim(): Sim {
     materials: 40, lifeSupport: 80, panels: 100, systems: { oxygen: true, greenhouse: true, drill: false }, scavenged: false, unpowered: [], solar: 0,
     usage: 0, foodRate: 0, waterRate: 0, research: [], drillHigh: false, capacity: 100, objective: 0,
     seed: Math.floor(Math.random() * 1000), event: null, eventSol: 1, eventsHandled: 0, broken: null, discoveries: [], reviewed: [], extraSites: [],
-    achievements: [], foodMade: 0, log: [{ sol: 1, icon: "🚀", text: "Landed on Mars. Mission begins!" }] };
+    achievements: [], foodMade: 0, waterMade: 0, solarMade: 0, energyUsed: 0, peakExposure: 0, powerOut: 0, damage: {}, log: [{ sol: 1, icon: "🚀", text: "Landed on Mars. Mission begins!" }] };
 }
 
 export const RATES = {
@@ -71,7 +72,7 @@ export function tick(prev: Sim, dt: number): Sim {
 
   // Power: solar depends on daylight, weather and panel cleanliness
   s.solar = RATES.solarPeak * daylight(s.time) * (dusty ? 0.35 : 1) * (s.panels / 100) * (has(s, "panels") ? 1.25 : 1) * (s.broken === "panels" ? 0.5 : 1);
-  s.energy = clamp(s.energy + s.solar * k);
+  s.energy = clamp(s.energy + s.solar * k); s.solarMade += s.solar * k;
   s.panels = clamp(s.panels - (dusty ? 35 : 10) * k);
   s.lifeSupport = clamp(s.lifeSupport - (dusty ? 14 : 9) * k);
 
@@ -93,7 +94,7 @@ export function tick(prev: Sim, dt: number): Sim {
   if (s.systems.drill && s.broken === "drill") unpowered.push("drill");
   else if (s.systems.drill) {
     const dw = RATES.drill.water * (s.drillHigh ? 1.7 : 1) * (has(s, "deepdrill") ? 1.4 : 1);
-    if (use(RATES.drill.energy * (s.drillHigh ? 1.8 : 1))) { s.water += dw * k; water += dw; } else unpowered.push("drill");
+    if (use(RATES.drill.energy * (s.drillHigh ? 1.8 : 1))) { s.water += dw * k; s.waterMade += dw * k; water += dw; } else unpowered.push("drill");
   }
   s.unpowered = unpowered;
 
@@ -102,21 +103,22 @@ export function tick(prev: Sim, dt: number): Sim {
   s.oxygen = clamp(s.oxygen - RATES.crew.oxygen * (has(s, "recycler") ? 0.8 : 1) * k, 0, cap);
   s.water = clamp(s.water - RATES.crew.water * k, 0, cap);
   s.food = clamp(s.food - RATES.crew.food * k, 0, cap);
-  s.usage = usage; s.foodRate = food - RATES.crew.food; s.waterRate = water - RATES.crew.water;
+  s.usage = usage; s.energyUsed += usage * k; if (s.energy <= 0.5) s.powerOut += dt; s.foodRate = food - RATES.crew.food; s.waterRate = water - RATES.crew.water;
 
   // Radiation exposure grows when shielding is weak
   const rad = envRadiation(ev) * 12 * (1 - s.shield / 100) - (has(s, "radmeds") ? 8 : 4);
-  s.exposure = clamp(s.exposure + rad * k);
+  s.exposure = clamp(s.exposure + rad * k); s.peakExposure = Math.max(s.peakExposure, s.exposure);
 
   // Base condition takes damage from shortages and hazards (gradual, never instant)
-  let dmg = 0;
-  if (s.oxygen <= 0) dmg += 30;
-  if (s.water <= 0) dmg += 15;
-  if (s.food <= 0) dmg += 15;
-  if (s.exposure >= 100) dmg += 25;
-  if (!baseOk) dmg += 10;
-  if (s.lifeSupport < 25) dmg += 8;
-  if (dusty) dmg += 4;
+  let dmg = 0; s.damage = { ...s.damage };
+  const hurt = (why: string, n: number) => { dmg += n; s.damage[why] = (s.damage[why] ?? 0) + n * k; };
+  if (s.oxygen <= 0) hurt("oxygen", 30);
+  if (s.water <= 0) hurt("water", 15);
+  if (s.food <= 0) hurt("food", 15);
+  if (s.exposure >= 100) hurt("radiation", 25);
+  if (!baseOk) hurt("energy", 10);
+  if (s.lifeSupport < 25) hurt("lifesupport", 8);
+  if (dusty) hurt("storm", 4);
   s.condition = clamp(s.condition - dmg * k);
 
   s.time = Math.min(DAY_SECONDS, s.time + dt);
@@ -389,4 +391,50 @@ export function checkAchievements(s: Sim): { sim: Sim; unlocked: typeof ACHIEVEM
   const n = { ...s, achievements: [...s.achievements, ...unlocked.map((a) => a.id)] };
   for (const a of unlocked) addLog(n, "⭐", `Achievement: ${a.title}`);
   return { sim: n, unlocked };
+}
+
+// ---------- Education + evaluation ----------
+export const CAUSES: Record<string, { title: string; lesson: string }> = {
+  oxygen: { title: "Oxygen ran out", lesson: "Mars air is mostly carbon dioxide — astronauts need machines and plants to make oxygen every day." },
+  water: { title: "Water ran out", lesson: "Water is needed for drinking, plants AND making oxygen. Mars water is frozen underground, so we must drill for it." },
+  food: { title: "Food ran out", lesson: "Food from Earth takes months to arrive. A greenhouse lets the crew grow their own." },
+  radiation: { title: "Too much radiation", lesson: "Mars has no thick air or magnetic field to block space radiation. Shielding keeps astronauts safe." },
+  energy: { title: "The power failed", lesson: "Every machine needs electricity. Without power, life support stops working." },
+  lifesupport: { title: "Life support broke down", lesson: "Machines on Mars wear out. Regular repairs keep the crew alive." },
+  storm: { title: "Storm damage", lesson: "Dust storms on Mars can last for weeks. Strong, repaired buildings survive them." },
+};
+export const WARNING_TIPS: Record<string, string> = {
+  "Low oxygen": "Turn on the oxygen generator in the Dome or Habitat — we can't breathe Mars air!",
+  "OUT OF OXYGEN!": "The base is getting damaged! Turn on the oxygen generator and fix life support now.",
+  "Low water": "Switch on the Ice Drill. Water makes oxygen and grows food too.",
+  "No water!": "The base is getting damaged! Run the Ice Drill — maybe turn off the greenhouse to save water.",
+  "Low food": "Turn on the greenhouse. Plants need water and light to grow.",
+  "No food!": "The base is getting damaged! Grow food in the greenhouse.",
+  "Power shortage": "Turn off a machine or clean the solar panels. Without power, nothing works!",
+  "High radiation dose": "Upgrade shielding at the Radiation Shelter. Thick walls block radiation.",
+  "Base damaged": "Repair the base at the Habitat before it breaks down!",
+  "Life support failing": "Fix life support in the Dome or Habitat with materials.",
+};
+export interface Rating { label: string; icon: string; value: string; stars: number; note: string }
+export function report(s: Sim) {
+  const r = Math.round;
+  const solsSurvived = s.status === "won" ? MAX_SOL : Math.max(0, s.sol - 1) + s.time / DAY_SECONDS;
+  const supplies = (s.oxygen + s.water + s.food) / 3;
+  const star = (v: number, a: number, b: number) => (v >= b ? 3 : v >= a ? 2 : 1);
+  const ratings: Rating[] = [
+    { label: "Radiation protection", icon: "🛡️", value: `Shield ${r(s.shield)}% · highest dose ${r(s.peakExposure)}`, stars: s.peakExposure < 40 ? 3 : s.peakExposure < 75 ? 2 : 1, note: s.peakExposure < 40 ? "The crew stayed safe from radiation." : "Radiation got high — upgrade shields before flares." },
+    { label: "Energy management", icon: "⚡", value: `${r(s.solarMade)} made · ${r(s.energyUsed)} used · ${r(s.powerOut)}s blackout`, stars: s.powerOut < 5 ? 3 : s.powerOut < 40 ? 2 : 1, note: s.powerOut < 5 ? "The lights never went out!" : "Power ran out sometimes — clean panels and switch off machines you don't need." },
+    { label: "Food production", icon: "🥕", value: `${r(s.foodMade)} food grown · ${r(s.food)} left`, stars: star(s.foodMade, 40, 100), note: s.foodMade >= 40 ? "The greenhouse fed the crew well." : "Grow more food — the greenhouse is your farm on Mars." },
+    { label: "Water production", icon: "💧", value: `${r(s.waterMade)} water drilled · ${r(s.water)} left`, stars: star(s.waterMade, 40, 120), note: s.waterMade >= 40 ? "Great ice drilling!" : "Use the Ice Drill more — water is used for everything." },
+    { label: "Life support", icon: "🫧", value: `Oxygen ${r(s.oxygen)} · life support ${r(s.lifeSupport)}%`, stars: star(s.oxygen + s.lifeSupport, 80, 140), note: s.oxygen > 40 ? "The crew could breathe easy." : "Keep the oxygen generator running and repaired." },
+    { label: "Science", icon: "🔬", value: `${s.discoveries.length} discoveries · ${s.research.length} upgrades`, stars: star(s.discoveries.length + s.research.length, 4, 8), note: s.discoveries.length >= 3 ? "A true Mars scientist!" : "Explore beyond the base to make discoveries." },
+  ];
+  const total = ratings.reduce((a, x) => a + x.stars, 0) + (s.status === "won" ? 3 : 0) + Math.floor(s.objective / 3);
+  const grade = s.status !== "won" ? (total >= 12 ? "Brave try" : "Training mission") : supplies >= 40 && s.condition >= 60 && s.objective >= 7 ? "Sustainable outpost ⭐⭐⭐" : s.condition >= 40 && s.objective >= 4 ? "Working outpost ⭐⭐" : "Survived, just barely ⭐";
+  const strengths = ratings.filter((x) => x.stars === 3).map((x) => `${x.icon} ${x.note}`);
+  const improve = ratings.filter((x) => x.stars === 1).map((x) => `${x.icon} ${x.note}`);
+  const worst = Object.entries(s.damage).sort((a, b) => b[1] - a[1])[0]?.[0];
+  const cause = s.status === "lost" && worst ? CAUSES[worst] : undefined;
+  const decisions = s.log.filter((l) => l.icon === "🗳️").map((l) => l.text.replace("Decision: ", ""));
+  return { solsSurvived, ratings, grade, strengths, improve, cause, decisions, supplies };
 }
