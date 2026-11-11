@@ -176,7 +176,7 @@ function Res({ name, icon, value, cls, low }: { name: string; icon: string; valu
   return (
     <div className={`flex items-center gap-1 ${danger ? "animate-pulse" : ""}`} title={name}>
       <span className="text-sm">{icon}</span>
-      <div className="hidden text-[10px] font-bold uppercase xl:block">{name}</div>
+      <div className="hidden text-[10px] font-bold uppercase 2xl:block">{name}</div>
       <div className="h-2 w-7 overflow-hidden rounded-full bg-hud-ink/60 sm:w-12"><div className={`h-full ${danger ? "bg-destructive" : cls}`} style={{ width: `${v}%` }} /></div>
       <span className={`text-xs font-bold ${danger ? "text-destructive" : ""}`}>{v}</span>
     </div>
