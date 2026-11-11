@@ -6,14 +6,15 @@ import { CharacterSelect } from "./CharacterSelect";
 import { BUILDINGS, LANDMARKS } from "@/game/world";
 import { loadCharacter, loadSim, resetGame, saveCharacter, saveSim } from "@/game/storage";
 import { beep } from "@/game/sound";
-import { checkObjective, infoFor, OBJECTIVES, act, actionsFor, DAY_SECONDS, EVENT_INFO, eventOf, MAX_SOL, newSim, nextSol, SOL_EVENTS, tick, warnings, type Sim } from "@/game/sim";
+import { ACHIEVEMENTS, BREAK_NAMES, checkAchievements, EVENTS, resolveEvent, SITES, visibleSites, checkObjective, infoFor, OBJECTIVES, act, actionsFor, DAY_SECONDS, EVENT_INFO, eventOf, MAX_SOL, newSim, nextSol, SOL_EVENTS, tick, warnings, type Sim } from "@/game/sim";
 import type { Character, Landmark } from "@/game/types";
 
 const WELCOME = "Welcome to Mars, astronaut! I'm PIP, your colony buddy. Let's explore our new home!";
-const STATION_NAMES: Record<string, string> = { solar: "Solar Farm", dome: "Command Dome · Life Support", greenhouse: "Greenhouse", drill: "Ice Drill", lab: "Research Lab · Shielding", hab: "Habitat · Living Conditions", rover: "Rover", shelter: "Radiation Shelter", storage: "Storage Depot" };
+const STATION_NAMES: Record<string, string> = { solar: "Solar Farm", dome: "Command Dome · Life Support", greenhouse: "Greenhouse", drill: "Ice Drill", lab: "Research Lab · Science", hab: "Habitat · Living Conditions", rover: "Rover", shelter: "Radiation Shelter", storage: "Storage Depot" };
 const STATION_ICON: Record<string, string> = { solar: "☀️", dome: "🫧", greenhouse: "🌱", drill: "💧", lab: "🔬", hab: "🏠", rover: "🚙", shelter: "🛡️", storage: "📦" };
 
-function nearestStation(x: number, y: number): string | null {
+function nearestStation(x: number, y: number, s: Sim): string | null {
+  for (const site of visibleSites(s)) if (!s.discoveries.includes(site.id) && Math.hypot(x - site.x, y - site.y) < 120) return `site:${site.id}`;
   for (const b of BUILDINGS) {
     if (b.kind === "lander" || b.kind === "antenna") continue;
     if (Math.hypot(x - (b.x + b.w / 2), y - (b.y + b.h / 2)) < Math.max(b.w, b.h) / 2 + 90) return b.kind;
@@ -38,6 +39,10 @@ export function MarsGame() {
   const pos = useRef({ x: 0, y: 0 });
   const simRef = useRef(sim);
   const toastRef = useRef(0);
+  const markers = useRef<{ x: number; y: number }[]>([]);
+  const speed = useRef(1);
+  const toastN = useRef(0);
+  const [logOpen, setLogOpen] = useState<"" | "log" | "ach">("");
   simRef.current = sim;
 
   useEffect(() => { const c = loadCharacter(); setCharacter(c); setPlaying(!!c); const ls = loadSim() ?? newSim(); toastRef.current = ls.objective; setSim(ls); setReady(true); }, []);
@@ -58,7 +63,11 @@ export function MarsGame() {
         } else { const w = warnings(next)[0]; if (w && w !== warnings(prev)[0]) setPip(`Warning: ${w}! Let's fix that fast.`); }
         if ((saved += dt) > 3 || next.status !== prev.status) { saved = 0; saveSim(next); }
       }
-      const st = nearestStation(pos.current.x, pos.current.y);
+      const cur = simRef.current, e = eventOf(cur);
+      markers.current = visibleSites(cur).filter((x) => !cur.discoveries.includes(x.id));
+      speed.current = cur.status === "day" && (e === "dust" || e === "storm-flare") ? 0.65 : 1;
+      if (next.event && !prev.event) { beep("fail"); setPip(`${EVENTS[next.event.kind].icon} ${EVENTS[next.event.kind].title}! We need to decide what to do.`); }
+      const st = nearestStation(pos.current.x, pos.current.y, cur);
       setStation((o) => { if (o !== st) setOpen(false); return st; });
     }, 200);
     return () => clearInterval(id);
@@ -66,9 +75,16 @@ export function MarsGame() {
 
   function reward(s: Sim): Sim {
     const r = checkObjective(s);
-    if (r.done && r.sim.objective > toastRef.current) { toastRef.current = r.sim.objective; beep("goal"); setToast({ id: r.sim.objective, text: `🏆 Objective complete: ${r.done.title}! +10 🔩` }); setPip(`Great job! "${r.done.title}" done. Here are 10 bonus materials!`); }
-    return r.sim;
+    if (r.done && r.sim.objective > toastRef.current) { toastRef.current = r.sim.objective; beep("goal"); setToast({ id: ++toastN.current, text: `🏆 Objective complete: ${r.done.title}! +10 🔩` }); setPip(`Great job! "${r.done.title}" done. Here are 10 bonus materials!`); }
+    const a = checkAchievements(r.sim);
+    for (const x of a.unlocked) { beep("goal"); setToast({ id: ++toastN.current, text: `⭐ Achievement unlocked: ${x.icon} ${x.title}` }); }
+    return a.sim;
   }
+  const choose = (i: number) => {
+    const r = resolveEvent(simRef.current, i), ok = r.sim !== simRef.current;
+    beep(ok ? "ok" : "fail"); if (r.msg) setPip(ok ? r.msg : `❌ ${r.msg}`);
+    if (ok) { const n = reward(r.sim); simRef.current = n; setSim(n); saveSim(n); }
+  };
   const doAction = (aid: string) => {
     const r = act(simRef.current, aid), ok = r.sim !== simRef.current;
     beep(ok ? "ok" : "fail"); setFlash({ id: Date.now(), ok });
@@ -76,8 +92,10 @@ export function MarsGame() {
   };
 
   useEffect(() => {
-    const kd = (e: KeyboardEvent) => { if (!station) return; const k = e.key.toLowerCase();
-      if (k === "e") { setOpen((o) => { if (!o) beep("open"); return !o; }); }
+    const kd = (e: KeyboardEvent) => { const k = e.key.toLowerCase();
+      if (simRef.current.event && /^[12]$/.test(k)) { choose(Number(k) - 1); return; }
+      if (!station) return;
+      if (k === "e" && !simRef.current.event) { setOpen((o) => { if (!o) beep("open"); return !o; }); }
       else if (k === "escape") setOpen(false);
       else if (open && /^[1-9]$/.test(k)) { const a = actionsFor(station, simRef.current)[Number(k) - 1]; if (a) doAction(a.id); } };
     window.addEventListener("keydown", kd); return () => window.removeEventListener("keydown", kd);
@@ -109,11 +127,15 @@ export function MarsGame() {
     </>
   );
   const actions = station ? actionsFor(station, sim) : [];
+  const site = station?.startsWith("site:") ? SITES.find((x) => x.id === station.slice(5)) : undefined;
+  const stName = site ? `${site.name} · Exploration site` : station ? STATION_NAMES[station] : "";
+  const stIcon = site ? "🔍" : station ? STATION_ICON[station] : "";
+  const evDef = sim.event ? EVENTS[sim.event.kind] : null;
   const off = sim.unpowered.length > 0;
 
   return (
     <div className="game-root fixed inset-0 overflow-hidden">
-      <GameCanvas character={character} input={input} onDiscover={onDiscover} posRef={pos} />
+      <GameCanvas character={character} input={input} onDiscover={onDiscover} posRef={pos} markersRef={markers} speedRef={speed} />
       {(ev === "dust" || ev === "storm-flare") && sim.status === "day" && <div className="weather-dust pointer-events-none absolute inset-0" />}
       {(ev === "flare" || ev === "storm-flare") && sim.status === "day" && <div className="weather-flare pointer-events-none absolute inset-0" />}
       <div className="pointer-events-none absolute inset-0 p-2 text-hud-fg sm:p-3">
@@ -126,6 +148,12 @@ export function MarsGame() {
             </div>
             <div className="mt-1 h-1.5 w-full overflow-hidden rounded-full bg-hud-ink/60" title="Time of day"><div className="h-full bg-accent" style={{ width: `${(sim.time / DAY_SECONDS) * 100}%` }} /></div>
             <button onClick={() => { resetGame(); setPlaying(false); }} className="mt-1 text-xs underline decoration-dotted hover:text-accent">Restart / switch astronaut</button>
+            <div className="mt-1 flex gap-1">
+              <button onClick={() => setLogOpen((v) => (v === "log" ? "" : "log"))} className="rounded-lg bg-hud-ink/50 px-2 py-0.5 text-xs font-bold hover:bg-hud-ink">📜 Log</button>
+              <button onClick={() => setLogOpen((v) => (v === "ach" ? "" : "ach"))} className="rounded-lg bg-hud-ink/50 px-2 py-0.5 text-xs font-bold hover:bg-hud-ink">⭐ {sim.achievements.length}/{ACHIEVEMENTS.length}</button>
+            </div>
+            {logOpen === "log" && <ul className="mt-1 max-h-[40vh] w-64 space-y-0.5 overflow-y-auto pr-1 text-xs">{sim.log.map((l, i) => <li key={i}><span className="text-hud-muted">S{l.sol}</span> {l.icon} {l.text}</li>)}</ul>}
+            {logOpen === "ach" && <ul className="mt-1 max-h-[40vh] w-64 space-y-0.5 overflow-y-auto text-xs">{ACHIEVEMENTS.map((a) => { const got = sim.achievements.includes(a.id); return <li key={a.id} className={got ? "font-bold text-accent" : "text-hud-muted"}>{got ? a.icon : "🔒"} {a.title}</li>; })}</ul>}
           </div>
           <div className="hud-panel order-last hidden flex-wrap items-center gap-3 rounded-2xl px-3 py-2 lg:flex lg:order-none">{resBar}</div>
           <div className="hud-panel max-w-[46vw] rounded-2xl px-3 py-2 sm:max-w-xs">
@@ -133,9 +161,10 @@ export function MarsGame() {
             <button onClick={() => setShowGoals((v) => !v)} className="pointer-events-auto block text-left">
               <div className="text-sm font-semibold sm:text-base">{goal ? goal.title : "All objectives complete! 🏆"}</div>
               {goal && <div className="text-xs text-hud-muted">{goal.hint}</div>}
-              <div className="mt-1 text-xs text-hud-muted">Objectives {sim.objective}/{OBJECTIVES.length} · Places {found.length}/{LANDMARKS.length} <span className="underline">{showGoals ? "hide" : "list"}</span></div>
+              <div className="mt-1 text-xs text-hud-muted">Objectives {sim.objective}/{OBJECTIVES.length} · Places {found.length}/{LANDMARKS.length} · 🔍 {sim.discoveries.length} <span className="underline">{showGoals ? "hide" : "list"}</span></div>
             </button>
             {showGoals && <ol className="mt-1 space-y-0.5 text-xs">{OBJECTIVES.map((o, i) => <li key={o.title} className={i < sim.objective ? "text-res-food" : i === sim.objective ? "font-bold" : "text-hud-muted"}>{i < sim.objective ? "✅" : i === sim.objective ? "▶️" : "🔒"} {o.title}</li>)}</ol>}
+            {sim.broken && <div className="mt-1 text-xs font-bold text-destructive">🔧 Broken: {BREAK_NAMES[sim.broken]}</div>}
             {off && <div className="mt-1 text-xs font-bold text-destructive">⚡ No power: {sim.unpowered.join(", ")}</div>}
           </div>
         </div>
@@ -169,19 +198,34 @@ export function MarsGame() {
           </div>
         )}
 
+        {evDef && sim.event && sim.status === "day" && (
+          <div className="event-pop hud-panel pointer-events-auto absolute left-1/2 top-1/2 w-[min(92vw,380px)] -translate-x-1/2 -translate-y-1/2 rounded-2xl p-3 text-center">
+            <div className="text-4xl">{evDef.icon}</div>
+            <div className="font-display text-xl font-bold">{evDef.title}</div>
+            <p className="text-sm">{evDef.text(sim)}</p>
+            <p className="mt-0.5 text-[11px] text-hud-muted">Time is paused. Choose wisely:</p>
+            {evDef.choices(sim).map((c, i) => (
+              <button key={c.label} onClick={() => choose(i)} className="mt-2 block w-full rounded-xl bg-primary px-3 py-2 text-left text-primary-foreground active:scale-95">
+                <div className="text-sm font-bold">{i + 1}. {c.label}</div>
+                <div className="text-xs">👍 {c.pro}</div><div className="text-xs">👎 {c.con}</div>
+              </button>
+            ))}
+          </div>
+        )}
         {toast && <div key={toast.id} className="sol-banner absolute inset-x-0 top-[22%] text-center"><span className="hud-panel inline-block rounded-2xl px-4 py-2 text-base font-bold text-accent sm:text-lg">{toast.text}</span></div>}
 
         {station && !open && (
           <button onClick={() => { beep("open"); setOpen(true); }} className="hud-panel pointer-events-auto absolute bottom-[38%] left-1/2 -translate-x-1/2 animate-bounce rounded-full px-4 py-1.5 text-sm font-bold sm:bottom-28">
-            {STATION_ICON[station]} <span className="desktop-only rounded bg-hud-ink/40 px-1 text-xs">E</span> {STATION_NAMES[station]}
+            {stIcon} <span className="desktop-only rounded bg-hud-ink/40 px-1 text-xs">E</span> {stName}
           </button>
         )}
         {station && open && (
           <div key={flash?.id} className={`hud-panel pointer-events-auto absolute bottom-[34%] left-1/2 w-[min(92vw,340px)] -translate-x-1/2 rounded-2xl p-2 sm:bottom-24 ${flash ? (flash.ok ? "panel-ok" : "panel-fail") : ""}`}>
             <div className="mb-1 flex items-center justify-between text-xs font-bold uppercase tracking-wider text-accent">
-              <span>{STATION_ICON[station]} {STATION_NAMES[station]}</span>
+              <span>{stIcon} {stName}</span>
               <button onClick={() => setOpen(false)} aria-label="Close" className="rounded px-1.5 text-hud-fg hover:bg-hud-ink/40">✕</button>
             </div>
+            {site && <div className="rounded-xl bg-hud-ink/40 px-2 py-1 text-xs">{sim.discoveries.includes(site.id) ? `✅ Scanned: ${site.discovery}` : "Something interesting is here! Scanning uses suit power and oxygen — more during dust storms."}</div>}
             <ul className="rounded-xl bg-hud-ink/40 px-2 py-1 text-xs leading-relaxed">{infoFor(station, sim).map((l) => <li key={l}>{l}</li>)}</ul>
             {actions.length === 0 && <div className="mt-1 text-center text-xs text-hud-muted">Nothing left to build here!</div>}
             {actions.map((a, i) => (
