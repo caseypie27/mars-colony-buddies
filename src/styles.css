@@ -203,3 +203,5 @@ html, body { margin: 0; width: 100vw; height: 100vh; height: 100dvh; overflow: h
 .panel-fail { animation: panel-fail 0.4s ease-out; }
 @keyframes panel-ok { 30% { box-shadow: 0 0 0 4px var(--res-food); } }
 @keyframes panel-fail { 20%, 60% { transform: translateX(calc(-50% - 6px)); box-shadow: 0 0 0 4px var(--destructive); } 40%, 80% { transform: translateX(calc(-50% + 6px)); } }
+.event-pop { animation: event-pop 0.45s cubic-bezier(.2,1.6,.4,1); }
+@keyframes event-pop { from { opacity: 0; transform: translate(-50%, -50%) scale(0.6) rotate(-4deg); } }

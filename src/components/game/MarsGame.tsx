@@ -6,14 +6,15 @@ import { CharacterSelect } from "./CharacterSelect";
 import { BUILDINGS, LANDMARKS } from "@/game/world";
 import { loadCharacter, loadSim, resetGame, saveCharacter, saveSim } from "@/game/storage";
 import { beep } from "@/game/sound";
-import { checkObjective, infoFor, OBJECTIVES, act, actionsFor, DAY_SECONDS, EVENT_INFO, eventOf, MAX_SOL, newSim, nextSol, SOL_EVENTS, tick, warnings, type Sim } from "@/game/sim";
+import { report, WARNING_TIPS, ACHIEVEMENTS, BREAK_NAMES, checkAchievements, EVENTS, resolveEvent, SITES, visibleSites, checkObjective, infoFor, OBJECTIVES, act, actionsFor, DAY_SECONDS, EVENT_INFO, eventOf, MAX_SOL, newSim, nextSol, SOL_EVENTS, tick, warnings, type Sim } from "@/game/sim";
 import type { Character, Landmark } from "@/game/types";
 
 const WELCOME = "Welcome to Mars, astronaut! I'm PIP, your colony buddy. Let's explore our new home!";
-const STATION_NAMES: Record<string, string> = { solar: "Solar Farm", dome: "Command Dome · Life Support", greenhouse: "Greenhouse", drill: "Ice Drill", lab: "Research Lab · Shielding", hab: "Habitat · Living Conditions", rover: "Rover", shelter: "Radiation Shelter", storage: "Storage Depot" };
+const STATION_NAMES: Record<string, string> = { solar: "Solar Farm", dome: "Command Dome · Life Support", greenhouse: "Greenhouse", drill: "Ice Drill", lab: "Research Lab · Science", hab: "Habitat · Living Conditions", rover: "Rover", shelter: "Radiation Shelter", storage: "Storage Depot" };
 const STATION_ICON: Record<string, string> = { solar: "☀️", dome: "🫧", greenhouse: "🌱", drill: "💧", lab: "🔬", hab: "🏠", rover: "🚙", shelter: "🛡️", storage: "📦" };
 
-function nearestStation(x: number, y: number): string | null {
+function nearestStation(x: number, y: number, s: Sim): string | null {
+  for (const site of visibleSites(s)) if (!s.discoveries.includes(site.id) && Math.hypot(x - site.x, y - site.y) < 120) return `site:${site.id}`;
   for (const b of BUILDINGS) {
     if (b.kind === "lander" || b.kind === "antenna") continue;
     if (Math.hypot(x - (b.x + b.w / 2), y - (b.y + b.h / 2)) < Math.max(b.w, b.h) / 2 + 90) return b.kind;
@@ -38,6 +39,13 @@ export function MarsGame() {
   const pos = useRef({ x: 0, y: 0 });
   const simRef = useRef(sim);
   const toastRef = useRef(0);
+  const markers = useRef<{ x: number; y: number }[]>([]);
+  const speed = useRef(1);
+  const toastN = useRef(0);
+  const [briefing, setBriefing] = useState(false);
+  const briefRef = useRef(false);
+  briefRef.current = briefing;
+  const [logOpen, setLogOpen] = useState<"" | "log" | "ach">("");
   simRef.current = sim;
 
   useEffect(() => { const c = loadCharacter(); setCharacter(c); setPlaying(!!c); const ls = loadSim() ?? newSim(); toastRef.current = ls.objective; setSim(ls); setReady(true); }, []);
@@ -48,17 +56,21 @@ export function MarsGame() {
     let last = performance.now(), saved = 0;
     const id = setInterval(() => {
       const now = performance.now(), dt = Math.min(1, (now - last) / 1000); last = now;
-      const prev = simRef.current, next = reward(tick(prev, dt));
+      const prev = simRef.current, next = briefRef.current ? prev : reward(tick(prev, dt));
       if (next !== prev) {
         simRef.current = next; setSim(next);
         if (next.status !== prev.status) {
           if (next.status === "summary") setPip(`Sol ${next.sol} is over! Check our supplies and get ready for tomorrow.`);
           if (next.status === "won") setPip("We survived 10 Sols on Mars! You're a true Mars Base Buddy!");
-          if (next.status === "lost") setPip("Oh no, the base is too damaged. Let's learn from it and try again!");
-        } else { const w = warnings(next)[0]; if (w && w !== warnings(prev)[0]) setPip(`Warning: ${w}! Let's fix that fast.`); }
+          if (next.status === "lost") setPip(`Oh no! ${report(next).cause?.title ?? "The base broke down"}. Let's learn from it and try again!`);
+        } else { const w = warnings(next)[0]; if (w && w !== warnings(prev)[0]) { beep("fail"); setPip(`⚠️ ${w}! ${WARNING_TIPS[w] ?? ""}`); } }
         if ((saved += dt) > 3 || next.status !== prev.status) { saved = 0; saveSim(next); }
       }
-      const st = nearestStation(pos.current.x, pos.current.y);
+      const cur = simRef.current, e = eventOf(cur);
+      markers.current = visibleSites(cur).filter((x) => !cur.discoveries.includes(x.id));
+      speed.current = cur.status === "day" && (e === "dust" || e === "storm-flare") ? 0.65 : 1;
+      if (next.event && !prev.event) { beep("fail"); setPip(`${EVENTS[next.event.kind].icon} ${EVENTS[next.event.kind].title}! We need to decide what to do.`); }
+      const st = nearestStation(pos.current.x, pos.current.y, cur);
       setStation((o) => { if (o !== st) setOpen(false); return st; });
     }, 200);
     return () => clearInterval(id);
@@ -66,9 +78,16 @@ export function MarsGame() {
 
   function reward(s: Sim): Sim {
     const r = checkObjective(s);
-    if (r.done && r.sim.objective > toastRef.current) { toastRef.current = r.sim.objective; beep("goal"); setToast({ id: r.sim.objective, text: `🏆 Objective complete: ${r.done.title}! +10 🔩` }); setPip(`Great job! "${r.done.title}" done. Here are 10 bonus materials!`); }
-    return r.sim;
+    if (r.done && r.sim.objective > toastRef.current) { toastRef.current = r.sim.objective; beep("goal"); setToast({ id: ++toastN.current, text: `🏆 Objective complete: ${r.done.title}! +10 🔩` }); setPip(`Great job! "${r.done.title}" done. Here are 10 bonus materials!`); }
+    const a = checkAchievements(r.sim);
+    for (const x of a.unlocked) { beep("goal"); setToast({ id: ++toastN.current, text: `⭐ Achievement unlocked: ${x.icon} ${x.title}` }); }
+    return a.sim;
   }
+  const choose = (i: number) => {
+    const r = resolveEvent(simRef.current, i), ok = r.sim !== simRef.current;
+    beep(ok ? "ok" : "fail"); if (r.msg) setPip(ok ? r.msg : `❌ ${r.msg}`);
+    if (ok) { const n = reward(r.sim); simRef.current = n; setSim(n); saveSim(n); }
+  };
   const doAction = (aid: string) => {
     const r = act(simRef.current, aid), ok = r.sim !== simRef.current;
     beep(ok ? "ok" : "fail"); setFlash({ id: Date.now(), ok });
@@ -76,8 +95,10 @@ export function MarsGame() {
   };
 
   useEffect(() => {
-    const kd = (e: KeyboardEvent) => { if (!station) return; const k = e.key.toLowerCase();
-      if (k === "e") { setOpen((o) => { if (!o) beep("open"); return !o; }); }
+    const kd = (e: KeyboardEvent) => { const k = e.key.toLowerCase();
+      if (simRef.current.event && /^[12]$/.test(k)) { choose(Number(k) - 1); return; }
+      if (!station) return;
+      if (k === "e" && !simRef.current.event) { setOpen((o) => { if (!o) beep("open"); return !o; }); }
       else if (k === "escape") setOpen(false);
       else if (open && /^[1-9]$/.test(k)) { const a = actionsFor(station, simRef.current)[Number(k) - 1]; if (a) doAction(a.id); } };
     window.addEventListener("keydown", kd); return () => window.removeEventListener("keydown", kd);
@@ -85,14 +106,14 @@ export function MarsGame() {
 
   if (!ready) return <div className="space-bg fixed inset-0" />;
   if (!playing || !character)
-    return <CharacterSelect initial={character} onStart={(c) => { saveCharacter(c); const s = newSim(); toastRef.current = 0; saveSim(s); setSim(s); setCharacter(c); setFound([]); setPip(WELCOME); setPlaying(true); }} />;
+    return <CharacterSelect initial={character} onStart={(c) => { saveCharacter(c); const s = newSim(); toastRef.current = 0; saveSim(s); setSim(s); setCharacter(c); setFound([]); setPip(WELCOME); setBriefing(true); setPlaying(true); }} />;
 
   const onDiscover = (l: Landmark) => setFound((f) => { const n = [...f, l.id]; setPip(`${l.name}: ${l.pip}`); return n; });
   const ev = eventOf(sim), info = EVENT_INFO[ev];
   const warn = warnings(sim);
   const beginSol = () => { const s = nextSol(sim); setSim(s); saveSim(s); setBanner((b) => b + 1); const i = EVENT_INFO[eventOf(s)]; setPip(`Sol ${s.sol}: ${i.label}! ${i.tip}`); };
   const goal = OBJECTIVES[sim.objective];
-  const restart = () => { const s = newSim(); toastRef.current = 0; setSim(s); saveSim(s); setPip(WELCOME); setBanner((b) => b + 1); };
+  const restart = () => { const s = newSim(); toastRef.current = 0; setBriefing(true); setSim(s); saveSim(s); setPip(WELCOME); setBanner((b) => b + 1); };
   const res = [
     { name: "Oxygen", icon: "🫧", value: (sim.oxygen / sim.capacity) * 100, raw: sim.oxygen, cls: "bg-res-oxygen", low: 25 },
     { name: "Water", icon: "💧", value: (sim.water / sim.capacity) * 100, raw: sim.water, cls: "bg-res-water", low: 20 },
@@ -109,11 +130,15 @@ export function MarsGame() {
     </>
   );
   const actions = station ? actionsFor(station, sim) : [];
+  const site = station?.startsWith("site:") ? SITES.find((x) => x.id === station.slice(5)) : undefined;
+  const stName = site ? `${site.name} · Exploration site` : station ? STATION_NAMES[station] : "";
+  const stIcon = site ? "🔍" : station ? STATION_ICON[station] : "";
+  const evDef = sim.event ? EVENTS[sim.event.kind] : null;
   const off = sim.unpowered.length > 0;
 
   return (
     <div className="game-root fixed inset-0 overflow-hidden">
-      <GameCanvas character={character} input={input} onDiscover={onDiscover} posRef={pos} />
+      <GameCanvas character={character} input={input} onDiscover={onDiscover} posRef={pos} markersRef={markers} speedRef={speed} />
       {(ev === "dust" || ev === "storm-flare") && sim.status === "day" && <div className="weather-dust pointer-events-none absolute inset-0" />}
       {(ev === "flare" || ev === "storm-flare") && sim.status === "day" && <div className="weather-flare pointer-events-none absolute inset-0" />}
       <div className="pointer-events-none absolute inset-0 p-2 text-hud-fg sm:p-3">
@@ -126,6 +151,12 @@ export function MarsGame() {
             </div>
             <div className="mt-1 h-1.5 w-full overflow-hidden rounded-full bg-hud-ink/60" title="Time of day"><div className="h-full bg-accent" style={{ width: `${(sim.time / DAY_SECONDS) * 100}%` }} /></div>
             <button onClick={() => { resetGame(); setPlaying(false); }} className="mt-1 text-xs underline decoration-dotted hover:text-accent">Restart / switch astronaut</button>
+            <div className="mt-1 flex gap-1">
+              <button onClick={() => setLogOpen((v) => (v === "log" ? "" : "log"))} className="rounded-lg bg-hud-ink/50 px-2 py-0.5 text-xs font-bold hover:bg-hud-ink">📜 Log</button>
+              <button onClick={() => setLogOpen((v) => (v === "ach" ? "" : "ach"))} className="rounded-lg bg-hud-ink/50 px-2 py-0.5 text-xs font-bold hover:bg-hud-ink">⭐ {sim.achievements.length}/{ACHIEVEMENTS.length}</button>
+            </div>
+            {logOpen === "log" && <ul className="mt-1 max-h-[40vh] w-64 space-y-0.5 overflow-y-auto pr-1 text-xs">{sim.log.map((l, i) => <li key={i}><span className="text-hud-muted">S{l.sol}</span> {l.icon} {l.text}</li>)}</ul>}
+            {logOpen === "ach" && <ul className="mt-1 max-h-[40vh] w-64 space-y-0.5 overflow-y-auto text-xs">{ACHIEVEMENTS.map((a) => { const got = sim.achievements.includes(a.id); return <li key={a.id} className={got ? "font-bold text-accent" : "text-hud-muted"}>{got ? a.icon : "🔒"} {a.title}</li>; })}</ul>}
           </div>
           <div className="hud-panel order-last hidden flex-wrap items-center gap-3 rounded-2xl px-3 py-2 lg:flex lg:order-none">{resBar}</div>
           <div className="hud-panel max-w-[46vw] rounded-2xl px-3 py-2 sm:max-w-xs">
@@ -133,9 +164,10 @@ export function MarsGame() {
             <button onClick={() => setShowGoals((v) => !v)} className="pointer-events-auto block text-left">
               <div className="text-sm font-semibold sm:text-base">{goal ? goal.title : "All objectives complete! 🏆"}</div>
               {goal && <div className="text-xs text-hud-muted">{goal.hint}</div>}
-              <div className="mt-1 text-xs text-hud-muted">Objectives {sim.objective}/{OBJECTIVES.length} · Places {found.length}/{LANDMARKS.length} <span className="underline">{showGoals ? "hide" : "list"}</span></div>
+              <div className="mt-1 text-xs text-hud-muted">Objectives {sim.objective}/{OBJECTIVES.length} · Places {found.length}/{LANDMARKS.length} · 🔍 {sim.discoveries.length} <span className="underline">{showGoals ? "hide" : "list"}</span></div>
             </button>
             {showGoals && <ol className="mt-1 space-y-0.5 text-xs">{OBJECTIVES.map((o, i) => <li key={o.title} className={i < sim.objective ? "text-res-food" : i === sim.objective ? "font-bold" : "text-hud-muted"}>{i < sim.objective ? "✅" : i === sim.objective ? "▶️" : "🔒"} {o.title}</li>)}</ol>}
+            {sim.broken && <div className="mt-1 text-xs font-bold text-destructive">🔧 Broken: {BREAK_NAMES[sim.broken]}</div>}
             {off && <div className="mt-1 text-xs font-bold text-destructive">⚡ No power: {sim.unpowered.join(", ")}</div>}
           </div>
         </div>
@@ -153,35 +185,64 @@ export function MarsGame() {
           </div>
         )}
 
+        {briefing && sim.status === "day" && (
+          <div className="event-pop hud-panel pointer-events-auto absolute left-1/2 top-1/2 max-h-[85dvh] w-[min(92vw,420px)] -translate-x-1/2 -translate-y-1/2 overflow-y-auto rounded-2xl p-4">
+            <div className="text-center text-[10px] font-bold uppercase tracking-widest text-accent">Junior Astronaut Mission Briefing</div>
+            <div className="text-center font-display text-2xl font-bold">Build a home on Mars 🚀</div>
+            <p className="mt-1 text-center text-sm">Keep your crew alive for <b>10 Sols</b> (Martian days). Every machine is connected — choose wisely!</p>
+            <ul className="mt-2 space-y-1 text-xs sm:text-sm">
+              <li>🫧 <b>Oxygen</b> — Mars air can't be breathed. The generator makes oxygen from water + energy.</li>
+              <li>💧 <b>Water</b> — frozen underground. The Ice Drill digs it up using energy.</li>
+              <li>🥕 <b>Food</b> — the Greenhouse grows it with water + energy.</li>
+              <li>⚡ <b>Energy</b> — solar panels. Less sun in dust storms and when panels are dusty!</li>
+              <li>🛡️ <b>Shielding</b> — blocks space radiation. Upgrade it before solar flares.</li>
+              <li>🏠 <b>Base</b> — shortages slowly damage the base. If it reaches 0, the mission fails.</li>
+              <li>🔍 <b>Explore</b> blue <b>?</b> sites for discoveries, then study them at the Research Lab.</li>
+            </ul>
+            <p className="mt-2 text-center text-xs text-hud-muted">Walk up to a building and press <b>E</b> (or tap) to use it.</p>
+            <div className="text-center"><button onClick={() => { beep("goal"); setBriefing(false); setBanner((b) => b + 1); }} className="start-btn mt-3 rounded-xl px-6 py-2 font-bold">Start mission!</button></div>
+          </div>
+        )}
         {sim.status !== "day" && (
-          <div className="hud-panel pointer-events-auto absolute left-1/2 top-1/2 w-[min(92vw,360px)] -translate-x-1/2 -translate-y-1/2 rounded-2xl p-4 text-center">
+          <div className={`hud-panel pointer-events-auto absolute left-1/2 top-1/2 max-h-[90dvh] -translate-x-1/2 -translate-y-1/2 overflow-y-auto rounded-2xl p-4 text-center ${sim.status === "summary" ? "w-[min(92vw,360px)]" : "event-pop w-[min(94vw,560px)]"}`}>
             {sim.status === "summary" && <>
               <div className="font-display text-2xl font-bold">Sol {sim.sol} complete! 🌙</div>
               <p className="mt-1 text-sm text-hud-muted">Time is paused. Walk to buildings to switch systems, repair or upgrade before tomorrow.</p>
               <div className="mt-3 rounded-xl bg-hud-ink/40 p-2 text-sm"><b>Tomorrow: {EVENT_INFO[SOL_EVENTS[sim.sol] ?? "clear"].icon} {EVENT_INFO[SOL_EVENTS[sim.sol] ?? "clear"].label}</b><div className="text-xs">{EVENT_INFO[SOL_EVENTS[sim.sol] ?? "clear"].tip}</div></div>
               <button onClick={beginSol} className="start-btn mt-3 rounded-xl px-5 py-2 font-bold">Begin Sol {sim.sol + 1}</button>
             </>}
-            {sim.status !== "summary" && <>
-              <div className="font-display text-2xl font-bold">{sim.status === "won" ? "Mission complete! 🎉" : "Mission failed"}</div>
-              <p className="mt-1 text-sm">{sim.status === "won" ? `You kept the colony alive for ${MAX_SOL} Sols!` : `The base broke down on Sol ${sim.sol}. Balance energy, water and shields next time!`}</p>
-              <button onClick={restart} className="start-btn mt-3 rounded-xl px-5 py-2 font-bold">Play again</button>
-            </>}
+            {sim.status !== "summary" && <MissionReport sim={sim} onRestart={restart} />}
           </div>
         )}
 
+        {evDef && sim.event && sim.status === "day" && (
+          <div className="event-pop hud-panel pointer-events-auto absolute left-1/2 top-1/2 w-[min(92vw,380px)] -translate-x-1/2 -translate-y-1/2 rounded-2xl p-3 text-center">
+            <div className="text-4xl">{evDef.icon}</div>
+            <div className="font-display text-xl font-bold">{evDef.title}</div>
+            <p className="text-sm">{evDef.text(sim)}</p>
+            <p className="mt-0.5 text-[11px] text-hud-muted">Time is paused. Choose wisely:</p>
+            {evDef.choices(sim).map((c, i) => (
+              <button key={c.label} onClick={() => choose(i)} className="mt-2 block w-full rounded-xl bg-primary px-3 py-2 text-left text-primary-foreground active:scale-95">
+                <div className="text-sm font-bold">{i + 1}. {c.label}</div>
+                <div className="text-xs">👍 {c.pro}</div><div className="text-xs">👎 {c.con}</div>
+              </button>
+            ))}
+          </div>
+        )}
         {toast && <div key={toast.id} className="sol-banner absolute inset-x-0 top-[22%] text-center"><span className="hud-panel inline-block rounded-2xl px-4 py-2 text-base font-bold text-accent sm:text-lg">{toast.text}</span></div>}
 
         {station && !open && (
           <button onClick={() => { beep("open"); setOpen(true); }} className="hud-panel pointer-events-auto absolute bottom-[38%] left-1/2 -translate-x-1/2 animate-bounce rounded-full px-4 py-1.5 text-sm font-bold sm:bottom-28">
-            {STATION_ICON[station]} <span className="desktop-only rounded bg-hud-ink/40 px-1 text-xs">E</span> {STATION_NAMES[station]}
+            {stIcon} <span className="desktop-only rounded bg-hud-ink/40 px-1 text-xs">E</span> {stName}
           </button>
         )}
         {station && open && (
           <div key={flash?.id} className={`hud-panel pointer-events-auto absolute bottom-[34%] left-1/2 w-[min(92vw,340px)] -translate-x-1/2 rounded-2xl p-2 sm:bottom-24 ${flash ? (flash.ok ? "panel-ok" : "panel-fail") : ""}`}>
             <div className="mb-1 flex items-center justify-between text-xs font-bold uppercase tracking-wider text-accent">
-              <span>{STATION_ICON[station]} {STATION_NAMES[station]}</span>
+              <span>{stIcon} {stName}</span>
               <button onClick={() => setOpen(false)} aria-label="Close" className="rounded px-1.5 text-hud-fg hover:bg-hud-ink/40">✕</button>
             </div>
+            {site && <div className="rounded-xl bg-hud-ink/40 px-2 py-1 text-xs">{sim.discoveries.includes(site.id) ? `✅ Scanned: ${site.discovery}` : "Something interesting is here! Scanning uses suit power and oxygen — more during dust storms."}</div>}
             <ul className="rounded-xl bg-hud-ink/40 px-2 py-1 text-xs leading-relaxed">{infoFor(station, sim).map((l) => <li key={l}>{l}</li>)}</ul>
             {actions.length === 0 && <div className="mt-1 text-center text-xs text-hud-muted">Nothing left to build here!</div>}
             {actions.map((a, i) => (
@@ -192,7 +253,7 @@ export function MarsGame() {
           </div>
         )}
 
-        <div className="absolute inset-x-2 bottom-2 flex items-end justify-between gap-2 sm:inset-x-3 sm:bottom-3">
+        <div className={`absolute inset-x-2 bottom-2 flex ${sim.status === "won" || sim.status === "lost" || briefing ? "hidden" : ""} items-end justify-between gap-2 sm:inset-x-3 sm:bottom-3`}>
           <div className="touch-only"><Joystick input={input} /></div>
           <div className="desktop-only hud-panel rounded-xl px-3 py-1.5 text-xs">Move: WASD / Arrows · Open: E · Choose: 1–5</div>
           <div className="hud-panel pointer-events-auto flex max-w-[60vw] items-end gap-2 rounded-2xl p-2 sm:max-w-sm">
@@ -216,6 +277,39 @@ function Res({ name, icon, value, raw, cls, low }: { name: string; icon: string;
       <div className="hidden text-[10px] font-bold uppercase 2xl:block">{name}</div>
       <div className="h-2 w-7 overflow-hidden rounded-full bg-hud-ink/60 sm:w-12"><div className={`h-full ${danger ? "bg-destructive" : cls}`} style={{ width: `${w}%` }} /></div>
       <span className={`text-xs font-bold ${danger ? "text-destructive" : ""}`}>{v}</span>
+    </div>
+  );
+}
+
+function Stars({ n }: { n: number }) { return <span className="whitespace-nowrap text-accent" aria-label={`${n} of 3 stars`}>{"★".repeat(n)}<span className="text-hud-muted">{"★".repeat(3 - n)}</span></span>; }
+
+function MissionReport({ sim, onRestart }: { sim: Sim; onRestart: () => void }) {
+  const r = report(sim), won = sim.status === "won";
+  return (
+    <div className="text-left">
+      <div className="text-center text-[10px] font-bold uppercase tracking-widest text-accent">Final Mission Report</div>
+      <div className="text-center font-display text-2xl font-bold sm:text-3xl">{won ? "Mission complete! 🎉" : "Mission failed 💥"}</div>
+      <div className="text-center text-sm font-bold">{r.grade}</div>
+      {r.cause && <div className="mt-2 rounded-xl bg-destructive/30 p-2 text-sm"><b>{r.cause.title}.</b> {r.cause.lesson}</div>}
+      <div className="mt-2 grid grid-cols-3 gap-1 text-center text-xs">
+        <div className="rounded-lg bg-hud-ink/40 p-1"><div className="text-lg font-bold">{r.solsSurvived.toFixed(1).replace(".0", "")}</div>Sols survived</div>
+        <div className="rounded-lg bg-hud-ink/40 p-1"><div className="text-lg font-bold">{sim.objective}/{OBJECTIVES.length}</div>Objectives</div>
+        <div className="rounded-lg bg-hud-ink/40 p-1"><div className="text-lg font-bold">{sim.discoveries.length}</div>Discoveries</div>
+      </div>
+      <div className="mt-2 text-xs">Final supplies: 🫧 {Math.round(sim.oxygen)} · 💧 {Math.round(sim.water)} · 🥕 {Math.round(sim.food)} · ⚡ {Math.round(sim.energy)} · 🛡️ {Math.round(sim.shield)}% · 🏠 {Math.round(sim.condition)}%</div>
+      <ul className="mt-2 space-y-1">
+        {r.ratings.map((x) => (
+          <li key={x.label} className="rounded-lg bg-hud-ink/40 px-2 py-1 text-xs">
+            <div className="flex justify-between gap-2 font-bold"><span>{x.icon} {x.label}</span><Stars n={x.stars} /></div>
+            <div className="text-hud-muted">{x.value}</div>
+          </li>
+        ))}
+      </ul>
+      {r.strengths.length > 0 && <div className="mt-2 text-xs"><b className="text-res-food">💪 Strengths</b><ul>{r.strengths.map((t) => <li key={t}>{t}</li>)}</ul></div>}
+      {r.improve.length > 0 && <div className="mt-2 text-xs"><b className="text-accent">🎯 Next time</b><ul>{r.improve.map((t) => <li key={t}>{t}</li>)}</ul></div>}
+      {r.decisions.length > 0 && <div className="mt-2 text-xs"><b>🗳️ Your big decisions</b><ul className="text-hud-muted">{r.decisions.slice(0, 6).map((t, i) => <li key={i}>• {t}</li>)}</ul></div>}
+      {sim.discoveries.length > 0 && <div className="mt-2 text-xs"><b>🔬 Discoveries:</b> {sim.discoveries.map((d) => SITES.find((x) => x.id === d)?.discovery).join(", ")}</div>}
+      <div className="text-center"><button onClick={onRestart} className="start-btn mt-3 rounded-xl px-6 py-2 font-bold">Play again</button></div>
     </div>
   );
 }

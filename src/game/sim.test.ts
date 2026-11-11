@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { act, checkObjective, DAY_SECONDS, newSim, nextSol, tick } from "./sim";
+import { report, act, checkAchievements, resolveEvent, checkObjective, DAY_SECONDS, newSim, nextSol, tick } from "./sim";
 
-const runDay = (s = newSim()) => { for (let t = 0; t < DAY_SECONDS; t += 0.5) s = tick(s, 0.5); return s; };
+const runDay = (s = newSim()) => { for (let t = 0; t < DAY_SECONDS * 3 && s.status === "day"; t += 0.5) { if (s.event) s = resolveEvent(s, 1).sim; s = tick(s, 0.5); } return s; };
 
 describe("survival sim", () => {
   it("campaign is 10 Sols and pauses between Sols", () => {
@@ -41,5 +41,37 @@ describe("survival sim", () => {
   it("fast drilling makes more water", () => {
     const base = { ...newSim(), systems: { oxygen: false, greenhouse: false, drill: true } };
     expect(tick({ ...base, drillHigh: true }, 5).water).toBeGreaterThan(tick(base, 5).water);
+  });
+  it("events pause time until a choice is made", () => {
+    const s = { ...newSim(), sol: 2, event: { kind: "dustdevil" as const } };
+    expect(tick(s, 1).time).toBe(0);
+    const r = resolveEvent(s, 1);
+    expect(r.sim.event).toBeNull(); expect(r.sim.panels).toBe(30);
+  });
+  it("scanning a site costs 6 energy and 4 oxygen and records the discovery", () => {
+    const { sim } = act(newSim(), "scan-ice");
+    expect(sim.energy).toBe(64); expect(sim.oxygen).toBe(76); expect(sim.discoveries).toEqual(["ice"]);
+    expect(checkAchievements(sim).unlocked.map((a) => a.id)).toContain("discovery");
+  });
+  it("studying ice at the lab gives 30 water", () => {
+    const s = { ...newSim(), discoveries: ["ice"] };
+    expect(act(s, "review-ice").sim.water).toBe(100);
+  });
+  it("a broken system stops working until repaired", () => {
+    const s = tick({ ...newSim(), broken: "greenhouse" }, 1);
+    expect(s.unpowered).toContain("greenhouse");
+    expect(act(s, "fix-broken").sim.broken).toBeNull();
+  });
+  it("running out of oxygen damages the base gradually and is named as the cause", () => {
+    let s = { ...newSim(), oxygen: 0, systems: { oxygen: false, greenhouse: false, drill: false } };
+    s = tick(s, 10);
+    expect(s.status).toBe("day"); expect(s.condition).toBeGreaterThan(90);
+    for (let i = 0; i < 600 && s.status === "day"; i++) { if (s.event) s = { ...s, event: null }; s = nextSol(tick(s, 1)); }
+    expect(s.status).toBe("lost");
+    expect(report(s).cause?.title).toBe("Oxygen ran out");
+  });
+  it("a well-managed win is a sustainable outpost", () => {
+    const s = { ...newSim(), status: "won" as const, objective: 9, condition: 90 };
+    expect(report(s).grade).toContain("Sustainable");
   });
 });
