@@ -204,7 +204,7 @@ export function MarsGame() {
           </div>
         )}
         {sim.status !== "day" && (
-          <div className={`hud-panel pointer-events-auto absolute left-1/2 top-1/2 max-h-[90dvh] -translate-x-1/2 -translate-y-1/2 overflow-y-auto rounded-2xl p-4 text-center ${sim.status === "summary" ? "w-[min(92vw,360px)]" : "event-pop w-[min(94vw,560px)]"}`} -translate-x-1/2 -translate-y-1/2 rounded-2xl p-4 text-center">
+          <div className={`hud-panel pointer-events-auto absolute left-1/2 top-1/2 max-h-[90dvh] -translate-x-1/2 -translate-y-1/2 overflow-y-auto rounded-2xl p-4 text-center ${sim.status === "summary" ? "w-[min(92vw,360px)]" : "event-pop w-[min(94vw,560px)]"}`}>
             {sim.status === "summary" && <>
               <div className="font-display text-2xl font-bold">Sol {sim.sol} complete! 🌙</div>
               <p className="mt-1 text-sm text-hud-muted">Time is paused. Walk to buildings to switch systems, repair or upgrade before tomorrow.</p>
