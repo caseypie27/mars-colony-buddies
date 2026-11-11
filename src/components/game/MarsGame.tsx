@@ -253,7 +253,7 @@ export function MarsGame() {
           </div>
         )}
 
-        <div className="absolute inset-x-2 bottom-2 flex items-end justify-between gap-2 sm:inset-x-3 sm:bottom-3">
+        <div className={`absolute inset-x-2 bottom-2 flex ${sim.status === "won" || sim.status === "lost" || briefing ? "hidden" : ""} items-end justify-between gap-2 sm:inset-x-3 sm:bottom-3`}>
           <div className="touch-only"><Joystick input={input} /></div>
           <div className="desktop-only hud-panel rounded-xl px-3 py-1.5 text-xs">Move: WASD / Arrows · Open: E · Choose: 1–5</div>
           <div className="hud-panel pointer-events-auto flex max-w-[60vw] items-end gap-2 rounded-2xl p-2 sm:max-w-sm">
