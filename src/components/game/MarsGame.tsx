@@ -272,17 +272,17 @@ export function MarsGame() {
           <FacilityButton station={station} view={view} onOpen={() => { beep("open"); setOpen(true); }} label={<><span className="text-2xl">{stIcon}</span><span>Open {stName}</span></>} />
         )}
         {station && open && (
-          <div key={flash?.id} className={`hud-panel pointer-events-auto absolute bottom-[34%] left-1/2 w-[min(92vw,340px)] -translate-x-1/2 rounded-2xl p-2 sm:bottom-24 ${flash ? (flash.ok ? "panel-ok" : "panel-fail") : ""}`}>
-            <div className="mb-1 flex items-center justify-between text-xs font-bold uppercase tracking-wider text-accent">
+          <div key={flash?.id} className={`hud-panel pointer-events-auto absolute bottom-[34%] left-1/2 max-h-[55dvh] w-[min(94vw,470px)] -translate-x-1/2 overflow-y-auto rounded-2xl p-3 sm:bottom-28 sm:p-4 ${flash ? (flash.ok ? "panel-ok" : "panel-fail") : ""}`}>
+            <div className="mb-2 flex items-center justify-between text-sm font-bold uppercase tracking-wider text-accent sm:text-base">
               <span>{stIcon} {stName}</span>
-              <button onClick={() => setOpen(false)} aria-label="Close" className="rounded px-1.5 text-hud-fg hover:bg-hud-ink/40">✕</button>
+              <button onClick={() => setOpen(false)} aria-label="Close" className="rounded px-2 py-0.5 text-lg text-hud-fg hover:bg-hud-ink/40">✕</button>
             </div>
-            {site && <div className="rounded-xl bg-hud-ink/40 px-2 py-1 text-xs">{sim.discoveries.includes(site.id) ? `✅ Scanned: ${site.discovery}` : "Something interesting is here! Scanning uses suit power and oxygen — more during dust storms."}</div>}
-            <ul className="rounded-xl bg-hud-ink/40 px-2 py-1 text-xs leading-relaxed">{infoFor(station, sim).map((l) => <li key={l}>{l}</li>)}</ul>
-            {actions.length === 0 && <div className="mt-1 text-center text-xs text-hud-muted">Nothing left to build here!</div>}
+            {site && <div className="mb-2 rounded-xl bg-hud-ink/40 px-3 py-2 text-sm">{sim.discoveries.includes(site.id) ? `✅ Scanned: ${site.discovery}` : "Something interesting is here! Scanning uses suit power and oxygen — more during dust storms."}</div>}
+            <ul className="space-y-0.5 rounded-xl bg-hud-ink/40 px-3 py-2 text-sm leading-relaxed sm:text-base">{infoFor(station, sim).map((l) => <li key={l}>{l}</li>)}</ul>
+            {actions.length === 0 && <div className="mt-2 text-center text-sm text-hud-muted">Nothing left to build here!</div>}
             {actions.map((a, i) => (
-              <button key={a.id} onClick={() => doAction(a.id)} className="mt-1 flex w-full items-center justify-between gap-2 rounded-xl bg-primary px-3 py-1.5 text-left text-xs font-bold text-primary-foreground active:scale-95 sm:text-sm">
-                <span><span className="desktop-only mr-1 rounded bg-hud-ink/40 px-1 text-xs">{i + 1}</span>{a.label}</span>{a.cost && <span className="whitespace-nowrap text-xs">{a.cost}</span>}
+              <button key={a.id} onClick={() => doAction(a.id)} className="mt-2 flex w-full items-center justify-between gap-2 rounded-xl bg-primary px-4 py-2.5 text-left text-sm font-bold text-primary-foreground active:scale-95 sm:text-base">
+                <span><span className="desktop-only mr-1 rounded bg-hud-ink/40 px-1 text-xs">{i + 1}</span>{a.label}</span>{a.cost && <span className="whitespace-nowrap text-sm">{a.cost}</span>}
               </button>
             ))}
           </div>
