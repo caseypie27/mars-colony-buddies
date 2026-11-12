@@ -5,13 +5,15 @@ import type { Character, Dir, Landmark } from "@/game/types";
 
 export interface InputState { x: number; y: number }
 
-interface Props { character: Character; input: React.MutableRefObject<InputState>; onDiscover: (l: Landmark) => void; posRef?: React.MutableRefObject<{ x: number; y: number }>; markersRef?: React.MutableRefObject<{ x: number; y: number }[]>; speedRef?: React.MutableRefObject<number> }
+interface Props { character: Character; input: React.MutableRefObject<InputState>; onDiscover: (l: Landmark) => void; posRef?: React.MutableRefObject<{ x: number; y: number }>; markersRef?: React.MutableRefObject<{ x: number; y: number }[]>; speedRef?: React.MutableRefObject<number>; viewRef?: React.MutableRefObject<{ cx: number; cy: number; zoom: number }>; onWorldClick?: (x: number, y: number) => void }
 
 const SPEED = 260;
 const R = 16;
 
-export function GameCanvas({ character, input, onDiscover, posRef, markersRef, speedRef }: Props) {
+export function GameCanvas({ character, input, onDiscover, posRef, markersRef, speedRef, viewRef, onWorldClick }: Props) {
   const ref = useRef<HTMLCanvasElement>(null);
+  const clickRef = useRef(onWorldClick);
+  clickRef.current = onWorldClick;
   const discoverRef = useRef(onDiscover);
   discoverRef.current = onDiscover;
 
@@ -37,6 +39,11 @@ export function GameCanvas({ character, input, onDiscover, posRef, markersRef, s
     const blur = () => keys.clear();
     window.addEventListener("keydown", kd); window.addEventListener("keyup", ku); window.addEventListener("blur", blur);
 
+    const click = (e: PointerEvent) => {
+      const vw = window.innerWidth, vh = window.innerHeight, v = viewRef?.current; if (!v) return;
+      clickRef.current?.(v.cx + (e.clientX - vw / 2) / v.zoom, v.cy + (e.clientY - vh / 2) / v.zoom);
+    };
+    canvas.addEventListener("pointerdown", click);
     const blocked = (x: number, y: number) =>
       x < R || x > WORLD_W - R || y < SKY_H + 40 || y > WORLD_H - R ||
       obstacles.some((o) => x + R > o.x && x - R < o.x + o.w && y > o.y && y - 10 < o.y + o.h);
@@ -65,6 +72,7 @@ export function GameCanvas({ character, input, onDiscover, posRef, markersRef, s
       const hw = vw / 2 / zoom, hh = vh / 2 / zoom;
       cam.x += (p.x - cam.x) * Math.min(1, dt * 6); cam.y += (p.y - 40 - cam.y) * Math.min(1, dt * 6);
       const cx = Math.max(hw, Math.min(WORLD_W - hw, cam.x)), cy = Math.max(hh, Math.min(WORLD_H - hh, cam.y));
+      if (viewRef) { viewRef.current.cx = cx; viewRef.current.cy = cy; viewRef.current.zoom = zoom; }
       const dpr = canvas.width / vw;
       ctx.setTransform(1, 0, 0, 1, 0, 0);
       ctx.fillStyle = "#120a3a"; ctx.fillRect(0, 0, canvas.width, canvas.height);
@@ -82,8 +90,8 @@ export function GameCanvas({ character, input, onDiscover, posRef, markersRef, s
       raf = requestAnimationFrame(frame);
     };
     raf = requestAnimationFrame(frame);
-    return () => { cancelAnimationFrame(raf); window.removeEventListener("resize", resize); window.removeEventListener("keydown", kd); window.removeEventListener("keyup", ku); window.removeEventListener("blur", blur); };
-  }, [character, input, posRef, markersRef, speedRef]);
+    return () => { cancelAnimationFrame(raf); canvas.removeEventListener("pointerdown", click); window.removeEventListener("resize", resize); window.removeEventListener("keydown", kd); window.removeEventListener("keyup", ku); window.removeEventListener("blur", blur); };
+  }, [character, input, posRef, markersRef, speedRef, viewRef]);
 
   return <canvas ref={ref} className="absolute inset-0 block h-full w-full" aria-label="Mars colony game world" />;
 }

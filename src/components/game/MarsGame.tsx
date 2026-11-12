@@ -22,6 +22,42 @@ function nearestStation(x: number, y: number, s: Sim): string | null {
   return null;
 }
 
+function stationPoint(st: string): { x: number; y: number; top: number } | null {
+  if (st.startsWith("site:")) { const site = SITES.find((x) => x.id === st.slice(5)); return site ? { x: site.x, y: site.y, top: site.y - 110 } : null; }
+  const b = BUILDINGS.find((x) => x.kind === st); return b ? { x: b.x + b.w / 2, y: b.y + b.h / 2, top: b.y - 20 } : null;
+}
+
+function hitStation(x: number, y: number, st: string): boolean {
+  if (st.startsWith("site:")) { const p = stationPoint(st); return !!p && Math.hypot(x - p.x, y - p.y) < 80; }
+  return BUILDINGS.some((b) => b.kind === st && x > b.x - 20 && x < b.x + b.w + 20 && y > b.y - 40 && y < b.y + b.h + 20);
+}
+
+function FacilityButton({ station, view, label, onOpen }: { station: string; view: React.MutableRefObject<{ cx: number; cy: number; zoom: number }>; label: React.ReactNode; onOpen: () => void }) {
+  const ref = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    let raf = 0;
+    const loop = () => {
+      const p = stationPoint(station), el = ref.current, v = view.current;
+      if (p && el) {
+        const vw = window.innerWidth, vh = window.innerHeight;
+        const sx = vw / 2 + (p.x - v.cx) * v.zoom, sy = vh / 2 + (p.top - v.cy) * v.zoom;
+        const w = el.offsetWidth, h = el.offsetHeight;
+        const x = Math.max(8, Math.min(vw - w - 8, sx - w / 2));
+        const y = Math.max(vh * 0.28, Math.min(vh - h - 150, sy - h));
+        el.style.transform = `translate(${x}px, ${y}px)`;
+      }
+      raf = requestAnimationFrame(loop);
+    };
+    raf = requestAnimationFrame(loop);
+    return () => cancelAnimationFrame(raf);
+  }, [station, view]);
+  return (
+    <button ref={ref} onClick={onOpen} className="hud-panel start-btn pointer-events-auto absolute left-0 top-0 z-10 flex items-center gap-2 rounded-2xl px-5 py-3 text-base font-bold sm:text-lg" style={{ transform: "translate(-9999px,0)" }}>
+      {label}
+    </button>
+  );
+}
+
 export function MarsGame() {
   const [ready, setReady] = useState(false);
   const [character, setCharacter] = useState<Character | null>(null);
@@ -41,6 +77,7 @@ export function MarsGame() {
   const toastRef = useRef(0);
   const markers = useRef<{ x: number; y: number }[]>([]);
   const speed = useRef(1);
+  const view = useRef({ cx: 0, cy: 0, zoom: 1 });
   const toastN = useRef(0);
   const [briefing, setBriefing] = useState(false);
   const briefRef = useRef(false);
@@ -98,8 +135,7 @@ export function MarsGame() {
     const kd = (e: KeyboardEvent) => { const k = e.key.toLowerCase();
       if (simRef.current.event && /^[12]$/.test(k)) { choose(Number(k) - 1); return; }
       if (!station) return;
-      if (k === "e" && !simRef.current.event) { setOpen((o) => { if (!o) beep("open"); return !o; }); }
-      else if (k === "escape") setOpen(false);
+      if (k === "escape") setOpen(false);
       else if (open && /^[1-9]$/.test(k)) { const a = actionsFor(station, simRef.current)[Number(k) - 1]; if (a) doAction(a.id); } };
     window.addEventListener("keydown", kd); return () => window.removeEventListener("keydown", kd);
   }, [station, open]);
@@ -138,7 +174,7 @@ export function MarsGame() {
 
   return (
     <div className="game-root fixed inset-0 overflow-hidden">
-      <GameCanvas character={character} input={input} onDiscover={onDiscover} posRef={pos} markersRef={markers} speedRef={speed} />
+      <GameCanvas character={character} input={input} onDiscover={onDiscover} posRef={pos} markersRef={markers} speedRef={speed} viewRef={view} onWorldClick={(x, y) => { if (station && !open && !sim.event && !briefing && hitStation(x, y, station)) { beep("open"); setOpen(true); } }} />
       {(ev === "dust" || ev === "storm-flare") && sim.status === "day" && <div className="weather-dust pointer-events-none absolute inset-0" />}
       {(ev === "flare" || ev === "storm-flare") && sim.status === "day" && <div className="weather-flare pointer-events-none absolute inset-0" />}
       <div className="pointer-events-none absolute inset-0 p-2 text-hud-fg sm:p-3">
@@ -159,16 +195,17 @@ export function MarsGame() {
             {logOpen === "ach" && <ul className="mt-1 max-h-[40vh] w-64 space-y-0.5 overflow-y-auto text-xs">{ACHIEVEMENTS.map((a) => { const got = sim.achievements.includes(a.id); return <li key={a.id} className={got ? "font-bold text-accent" : "text-hud-muted"}>{got ? a.icon : "🔒"} {a.title}</li>; })}</ul>}
           </div>
           <div className="hud-panel order-last hidden flex-wrap items-center gap-3 rounded-2xl px-3 py-2 lg:flex lg:order-none">{resBar}</div>
-          <div className="hud-panel max-w-[46vw] rounded-2xl px-3 py-2 sm:max-w-xs">
-            <div className="text-[10px] font-bold uppercase tracking-widest text-accent">Mission</div>
-            <button onClick={() => setShowGoals((v) => !v)} className="pointer-events-auto block text-left">
-              <div className="text-sm font-semibold sm:text-base">{goal ? goal.title : "All objectives complete! 🏆"}</div>
-              {goal && <div className="text-xs text-hud-muted">{goal.hint}</div>}
-              <div className="mt-1 text-xs text-hud-muted">Objectives {sim.objective}/{OBJECTIVES.length} · Places {found.length}/{LANDMARKS.length} · 🔍 {sim.discoveries.length} <span className="underline">{showGoals ? "hide" : "list"}</span></div>
+          <div className="hud-panel w-[min(48vw,26rem)] shrink-0 rounded-2xl px-3 py-2.5 sm:px-4 sm:py-3 md:w-[26rem] lg:w-[min(26rem,30vw)] xl:w-[28rem]">
+            <div className="text-[11px] font-bold uppercase tracking-widest text-accent sm:text-xs">🎯 Mission</div>
+            <button onClick={() => setShowGoals((v) => !v)} className="pointer-events-auto mt-1 block w-full text-left">
+              <div className="font-display text-base font-bold leading-snug sm:text-lg md:text-xl">{goal ? goal.title : "All objectives complete! 🏆"}</div>
+              {goal && <div className="mt-1 text-xs leading-snug text-hud-muted sm:text-sm">{goal.hint}</div>}
+              <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-hud-ink/60"><div className="h-full bg-res-food transition-all" style={{ width: `${(sim.objective / OBJECTIVES.length) * 100}%` }} /></div>
+              <div className="mt-1.5 text-xs text-hud-muted sm:text-sm">Objectives {sim.objective}/{OBJECTIVES.length} · Places {found.length}/{LANDMARKS.length} · 🔍 {sim.discoveries.length} <span className="underline">{showGoals ? "hide" : "list"}</span></div>
             </button>
-            {showGoals && <ol className="mt-1 space-y-0.5 text-xs">{OBJECTIVES.map((o, i) => <li key={o.title} className={i < sim.objective ? "text-res-food" : i === sim.objective ? "font-bold" : "text-hud-muted"}>{i < sim.objective ? "✅" : i === sim.objective ? "▶️" : "🔒"} {o.title}</li>)}</ol>}
-            {sim.broken && <div className="mt-1 text-xs font-bold text-destructive">🔧 Broken: {BREAK_NAMES[sim.broken]}</div>}
-            {off && <div className="mt-1 text-xs font-bold text-destructive">⚡ No power: {sim.unpowered.join(", ")}</div>}
+            {showGoals && <ol className="mt-2 max-h-[40vh] space-y-1 overflow-y-auto border-t border-hud-fg/15 pt-2 text-xs sm:text-sm">{OBJECTIVES.map((o, i) => <li key={o.title} className={i < sim.objective ? "text-res-food" : i === sim.objective ? "font-bold" : "text-hud-muted"}>{i < sim.objective ? "✅" : i === sim.objective ? "▶️" : "🔒"} {o.title}</li>)}</ol>}
+            {sim.broken && <div className="mt-2 text-xs sm:text-sm font-bold text-destructive">🔧 Broken: {BREAK_NAMES[sim.broken]}</div>}
+            {off && <div className="mt-2 text-xs sm:text-sm font-bold text-destructive">⚡ No power: {sim.unpowered.join(", ")}</div>}
           </div>
         </div>
         <div className="hud-panel mx-auto mt-2 flex w-fit max-w-full flex-wrap justify-center gap-x-3 gap-y-1 rounded-2xl px-3 py-1.5 lg:hidden">{resBar}</div>
@@ -199,7 +236,7 @@ export function MarsGame() {
               <li>🏠 <b>Base</b> — shortages slowly damage the base. If it reaches 0, the mission fails.</li>
               <li>🔍 <b>Explore</b> blue <b>?</b> sites for discoveries, then study them at the Research Lab.</li>
             </ul>
-            <p className="mt-2 text-center text-xs text-hud-muted">Walk up to a building and press <b>E</b> (or tap) to use it.</p>
+            <p className="mt-2 text-center text-xs text-hud-muted">Walk up to a building, then click its button or the building itself to use it.</p>
             <div className="text-center"><button onClick={() => { beep("goal"); setBriefing(false); setBanner((b) => b + 1); }} className="start-btn mt-3 rounded-xl px-6 py-2 font-bold">Start mission!</button></div>
           </div>
         )}
@@ -231,10 +268,8 @@ export function MarsGame() {
         )}
         {toast && <div key={toast.id} className="sol-banner absolute inset-x-0 top-[22%] text-center"><span className="hud-panel inline-block rounded-2xl px-4 py-2 text-base font-bold text-accent sm:text-lg">{toast.text}</span></div>}
 
-        {station && !open && (
-          <button onClick={() => { beep("open"); setOpen(true); }} className="hud-panel pointer-events-auto absolute bottom-[38%] left-1/2 -translate-x-1/2 animate-bounce rounded-full px-4 py-1.5 text-sm font-bold sm:bottom-28">
-            {stIcon} <span className="desktop-only rounded bg-hud-ink/40 px-1 text-xs">E</span> {stName}
-          </button>
+        {station && !open && !sim.event && !briefing && (
+          <FacilityButton station={station} view={view} onOpen={() => { beep("open"); setOpen(true); }} label={<><span className="text-2xl">{stIcon}</span><span>Open {stName}</span></>} />
         )}
         {station && open && (
           <div key={flash?.id} className={`hud-panel pointer-events-auto absolute bottom-[34%] left-1/2 w-[min(92vw,340px)] -translate-x-1/2 rounded-2xl p-2 sm:bottom-24 ${flash ? (flash.ok ? "panel-ok" : "panel-fail") : ""}`}>
@@ -255,7 +290,7 @@ export function MarsGame() {
 
         <div className={`absolute inset-x-2 bottom-2 flex ${sim.status === "won" || sim.status === "lost" || briefing ? "hidden" : ""} items-end justify-between gap-2 sm:inset-x-3 sm:bottom-3`}>
           <div className="touch-only"><Joystick input={input} /></div>
-          <div className="desktop-only hud-panel rounded-xl px-3 py-1.5 text-xs">Move: WASD / Arrows · Open: E · Choose: 1–5</div>
+          <div className="desktop-only hud-panel rounded-xl px-3 py-1.5 text-xs">Move: WASD / Arrows · Open: click building · Choose: 1–5</div>
           <div className="hud-panel pointer-events-auto flex max-w-[60vw] items-end gap-2 rounded-2xl p-2 sm:max-w-sm">
             <div className="shrink-0 rounded-xl bg-hud-ink/40 p-1"><PipPortrait size={56} /></div>
             <div>
