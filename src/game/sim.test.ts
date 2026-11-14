@@ -75,3 +75,35 @@ describe("survival sim", () => {
     expect(report(s).grade).toContain("Sustainable");
   });
 });
+
+import { priorities, pickPrimary, stormOf, stormPhase, weatherNow } from "./sim";
+describe("priorities and storms", () => {
+  const top = (s: ReturnType<typeof newSim>) => priorities(s)[0]!;
+  it("low energy points to the solar panels", () => expect(top({ ...newSim(), energy: 10 }).station).toBe("solar"));
+  it("low water points to the ice drill", () => expect(top({ ...newSim(), water: 10 }).station).toBe("drill"));
+  it("low food points to the greenhouse", () => expect(top({ ...newSim(), food: 10 }).station).toBe("greenhouse"));
+  it("low oxygen points to life support", () => expect(top({ ...newSim(), oxygen: 20 }).station).toBe("dome"));
+  it("a malfunction points to the broken building", () => expect(top({ ...newSim(), broken: "drill" }).station).toBe("drill"));
+  it("critical oxygen beats low energy, water and research", () => {
+    const l = priorities({ ...newSim(), oxygen: 5, energy: 10, water: 15 });
+    expect(l[0]!.id).toBe("oxygen"); expect(l[0]!.level).toBe(1); expect(l[l.length - 1]!.level).toBe(4);
+  });
+  it("after oxygen is fixed the next urgent problem leads", () => {
+    expect(top({ ...newSim(), oxygen: 60, energy: 10, water: 15 }).level).toBe(2);
+  });
+  it("guidance does not flip between equal-level problems", () => {
+    const l = priorities({ ...newSim(), energy: 10, water: 5 });
+    expect(pickPrimary(l, "energy")?.id).toBe("energy");
+    expect(pickPrimary(priorities({ ...newSim(), energy: 10, oxygen: 5 }), "energy")?.id).toBe("oxygen");
+  });
+  it("storms only happen on clear Sols, are warned 10s ahead and end", () => {
+    for (let seed = 0; seed < 200; seed++) for (let sol = 1; sol <= 10; sol++) {
+      const s = { ...newSim(), seed, sol }, st = stormOf(s);
+      if (!st) continue;
+      expect(sol).toBeGreaterThan(1); expect(st.end - st.start).toBeGreaterThanOrEqual(15);
+      expect(stormPhase({ ...s, time: st.start - 5 })).toBe("approaching");
+      expect(weatherNow({ ...s, time: st.start + 1 })).not.toBe("clear");
+      expect(weatherNow({ ...s, time: st.end + 1 })).toBe("clear");
+    }
+  });
+});

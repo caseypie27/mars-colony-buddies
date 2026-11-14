@@ -34,7 +34,7 @@ export function drawWorldFx(ctx: CanvasRenderingContext2D, fx: Fx, t: number) {
   if (m.impact && meteorState.impactT === null) meteorState.impactT = t;
   const since = meteorState.impactT === null ? -1 : t - meteorState.impactT;
   if (since < 0 || since < 0.4) { // falling: slow approach while deciding, fast finish after the choice
-    const p = since < 0 ? Math.min(0.75, (t % 1000) * 0 + 0.75 * Math.min(1, ((t * 1000) % 1e9) ? 1 : 1)) : 0.75 + (since / 0.4) * 0.25;
+    const p = since < 0 ? 0.6 + Math.sin(t * 2) * 0.03 : 0.75 + (since / 0.4) * 0.25;
     const sx = m.x + 900 * (1 - p), sy = m.y - 1100 * (1 - p);
     const g = ctx.createLinearGradient(sx, sy, sx + 260, sy - 320); g.addColorStop(0, "rgba(255,220,150,0.95)"); g.addColorStop(1, "rgba(255,120,40,0)");
     ctx.strokeStyle = g; ctx.lineWidth = 16; ctx.lineCap = "round"; ctx.beginPath(); ctx.moveTo(sx, sy); ctx.lineTo(sx + 260, sy - 320); ctx.stroke();
@@ -69,7 +69,7 @@ export function drawScreenFx(ctx: CanvasRenderingContext2D, fx: Fx, t: number, v
 }
 
 export function drawNav(ctx: CanvasRenderingContext2D, nav: Nav, t: number, vw: number, vh: number, toScreen: (x: number, y: number) => [number, number], player: [number, number]) {
-  const [sx, sy] = toScreen(nav.x, nav.y), c = COLORS[nav.level] ?? COLORS[4], pulse = 0.5 + Math.sin(t * 5) * 0.5;
+  const [sx, sy] = toScreen(nav.x, nav.y), c: string = COLORS[nav.level] ?? "#22d3ee", pulse = 0.5 + Math.sin(t * 5) * 0.5;
   const top = vh < 640 ? 150 : 175, bottom = vh - 130, m = 40;
   const onScreen = sx > m && sx < vw - m && sy > top && sy < bottom;
   ctx.save(); ctx.shadowColor = c; ctx.shadowBlur = 12 + pulse * 14; ctx.fillStyle = c; ctx.strokeStyle = "#1e1b3a"; ctx.lineWidth = 3;

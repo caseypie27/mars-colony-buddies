@@ -5,8 +5,9 @@ import { PipPortrait } from "./Pip";
 import { CharacterSelect } from "./CharacterSelect";
 import { BUILDINGS, LANDMARKS } from "@/game/world";
 import { loadCharacter, loadSim, resetGame, saveCharacter, saveSim } from "@/game/storage";
-import { beep } from "@/game/sound";
-import { report, WARNING_TIPS, ACHIEVEMENTS, BREAK_NAMES, checkAchievements, EVENTS, resolveEvent, SITES, visibleSites, checkObjective, infoFor, OBJECTIVES, act, actionsFor, DAY_SECONDS, EVENT_INFO, eventOf, MAX_SOL, newSim, nextSol, SOL_EVENTS, tick, warnings, type Sim } from "@/game/sim";
+import { beep, play, soundForAction, unlockAudio, getSettings, setSettings, type AudioSettings } from "@/game/sound";
+import { newFx, type Nav } from "@/game/fx";
+import { report, ACHIEVEMENTS, BREAK_NAMES, checkAchievements, EVENTS, resolveEvent, SITES, visibleSites, checkObjective, infoFor, OBJECTIVES, act, actionsFor, DAY_SECONDS, EVENT_INFO, eventOf, MAX_SOL, newSim, nextSol, SOL_EVENTS, tick, type Sim, priorities, pickPrimary, LEVEL_NAMES, stormPhase, stormOf, weatherNow, BREAK_STATION, type Priority } from "@/game/sim";
 import type { Character, Landmark } from "@/game/types";
 
 const WELCOME = "Welcome to Mars, astronaut! I'm PIP, your colony buddy. Let's explore our new home!";
@@ -25,6 +26,13 @@ function nearestStation(x: number, y: number, s: Sim): string | null {
 function stationPoint(st: string): { x: number; y: number; top: number } | null {
   if (st.startsWith("site:")) { const site = SITES.find((x) => x.id === st.slice(5)); return site ? { x: site.x, y: site.y, top: site.y - 110 } : null; }
   const b = BUILDINGS.find((x) => x.kind === st); return b ? { x: b.x + b.w / 2, y: b.y + b.h / 2, top: b.y - 20 } : null;
+}
+
+/** Point for guidance; for the Solar Farm pick whichever panel field is closer. */
+function targetPoint(st: string, from: { x: number; y: number }) {
+  if (st !== "solar") return stationPoint(st);
+  const b = BUILDINGS.filter((x) => x.kind === "solar").sort((a, c) => Math.hypot(a.x - from.x, a.y - from.y) - Math.hypot(c.x - from.x, c.y - from.y))[0];
+  return b ? { x: b.x + b.w / 2, y: b.y + b.h / 2, top: b.y - 20 } : null;
 }
 
 function hitStation(x: number, y: number, st: string): boolean {
@@ -82,6 +90,16 @@ export function MarsGame() {
   const [briefing, setBriefing] = useState(false);
   const briefRef = useRef(false);
   briefRef.current = briefing;
+  const fx = useRef(newFx());
+  const nav = useRef<Nav | null>(null);
+  const primaryRef = useRef<string | null>(null);
+  const meteorN = useRef(0);
+  const [primary, setPrimary] = useState<Priority | null>(null);
+  const [alertsOpen, setAlertsOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [audio, setAudio] = useState<AudioSettings>(getSettings);
+  const updAudio = (p: Partial<AudioSettings>) => { setSettings(p); setAudio(getSettings()); };
+  useEffect(() => { unlockAudio(); }, []);
   const [logOpen, setLogOpen] = useState<"" | "log" | "ach">("");
   simRef.current = sim;
 
@@ -97,16 +115,42 @@ export function MarsGame() {
       if (next !== prev) {
         simRef.current = next; setSim(next);
         if (next.status !== prev.status) {
+          play(next.status === "won" ? "win" : next.status === "lost" ? "lose" : "milestone");
           if (next.status === "summary") setPip(`Sol ${next.sol} is over! Check our supplies and get ready for tomorrow.`);
           if (next.status === "won") setPip("We survived 10 Sols on Mars! You're a true Mars Base Buddy!");
           if (next.status === "lost") setPip(`Oh no! ${report(next).cause?.title ?? "The base broke down"}. Let's learn from it and try again!`);
-        } else { const w = warnings(next)[0]; if (w && w !== warnings(prev)[0]) { beep("fail"); setPip(`⚠️ ${w}! ${WARNING_TIPS[w] ?? ""}`); } }
+        }
+        const ph = stormPhase(next), pph = stormPhase(prev), st = stormOf(next);
+        if (st && ph !== pph) {
+          const dust = st.kind === "dust";
+          if (ph === "approaching") { play(dust ? "dust" : "radiation"); setToast({ id: ++toastN.current, text: dust ? "🌪️ Dust storm approaching!" : "☢️ Radiation storm detected!" }); setPip(dust ? "A dust storm is coming! Solar power will drop — save energy and clean the panels after." : "A radiation storm is coming! Our shielding will protect the crew — upgrade it at the Radiation Shelter."); }
+          if (ph === "active") { play(dust ? "dust" : "radiation", "storm-on"); setPip(dust ? "🌪️ The dust storm is here! Less sunlight means less solar power." : "☢️ Radiation storm! Radiation is 5x stronger right now."); }
+          if (!ph && pph === "active") setPip("The storm has passed. Conditions are back to normal!");
+        }
         if ((saved += dt) > 3 || next.status !== prev.status) { saved = 0; saveSim(next); }
       }
       const cur = simRef.current, e = eventOf(cur);
       markers.current = visibleSites(cur).filter((x) => !cur.discoveries.includes(x.id));
-      speed.current = cur.status === "day" && (e === "dust" || e === "storm-flare") ? 0.65 : 1;
-      if (next.event && !prev.event) { beep("fail"); setPip(`${EVENTS[next.event.kind].icon} ${EVENTS[next.event.kind].title}! We need to decide what to do.`); }
+      const wn = weatherNow(cur);
+      speed.current = cur.status === "day" && (wn === "dust" || wn === "storm-flare") ? 0.65 : 1;
+      void e;
+      // Priorities drive the alert sound, PIP warning and the one guidance arrow
+      const list = cur.status === "day" && !briefRef.current ? priorities(cur) : [];
+      const top = pickPrimary(list, primaryRef.current);
+      if ((top?.id ?? null) !== primaryRef.current) {
+        primaryRef.current = top?.id ?? null; setPrimary(top);
+        if (top && top.level <= 2) { play(top.level === 1 ? "critical" : "alert", top.id); setPip(`⚠️ ${top.title}! ${top.action}`); }
+        else if (top && top.level === 4 && top.id.startsWith("obj-")) play("objective");
+      } else if (top) setPrimary(top);
+      const bp = cur.broken ? stationPoint(BREAK_STATION[cur.broken]) : null;
+      fx.current.weather = cur.status === "day" ? wn : "clear";
+      fx.current.approaching = stormPhase(cur) === "approaching" ? stormOf(cur)!.kind : null;
+      fx.current.broken = bp ? { x: bp.x, y: bp.y } : null;
+      if (cur.event?.kind === "meteor" && !fx.current.meteor) { const mp = stationPoint(BREAK_STATION[cur.event.target ?? "drill"]); if (mp) fx.current.meteor = { id: ++meteorN.current, x: mp.x, y: mp.y, impact: false }; }
+      const tp = top?.station ? targetPoint(top.station, pos.current) : null;
+      const nearT = top?.station && nearestStation(pos.current.x, pos.current.y, cur) === top.station;
+      nav.current = getSettings().nav && tp && top && !nearT && !cur.event ? { x: tp.x, y: tp.top + 20, label: `${top.icon} ${top.guide}`, level: top.level } : null;
+      if (next.event && !prev.event) { play(next.event.kind === "meteor" ? "meteor" : next.event.kind === "malfunction" ? "malfunction" : "alert", "event"); setPip(`${EVENTS[next.event.kind].icon} ${EVENTS[next.event.kind].title}! We need to decide what to do.`); }
       const st = nearestStation(pos.current.x, pos.current.y, cur);
       setStation((o) => { if (o !== st) setOpen(false); return st; });
     }, 200);
@@ -115,19 +159,21 @@ export function MarsGame() {
 
   function reward(s: Sim): Sim {
     const r = checkObjective(s);
-    if (r.done && r.sim.objective > toastRef.current) { toastRef.current = r.sim.objective; beep("goal"); setToast({ id: ++toastN.current, text: `🏆 Objective complete: ${r.done.title}! +10 🔩` }); setPip(`Great job! "${r.done.title}" done. Here are 10 bonus materials!`); }
+    if (r.done && r.sim.objective > toastRef.current) { toastRef.current = r.sim.objective; play("goal"); setToast({ id: ++toastN.current, text: `🏆 Objective complete: ${r.done.title}! +10 🔩` }); setPip(`Great job! "${r.done.title}" done. Here are 10 bonus materials!`); }
     const a = checkAchievements(r.sim);
     for (const x of a.unlocked) { beep("goal"); setToast({ id: ++toastN.current, text: `⭐ Achievement unlocked: ${x.icon} ${x.title}` }); }
     return a.sim;
   }
   const choose = (i: number) => {
     const r = resolveEvent(simRef.current, i), ok = r.sim !== simRef.current;
-    beep(ok ? "ok" : "fail"); if (r.msg) setPip(ok ? r.msg : `❌ ${r.msg}`);
+    const wasMeteor = simRef.current.event?.kind === "meteor";
+    play(ok ? "ok" : "fail"); if (r.msg) setPip(ok ? r.msg : `❌ ${r.msg}`);
+    if (ok && wasMeteor && fx.current.meteor) { fx.current.meteor.impact = true; const m = fx.current.meteor; setTimeout(() => { if (fx.current.meteor === m) fx.current.meteor = null; }, 2500); }
     if (ok) { const n = reward(r.sim); simRef.current = n; setSim(n); saveSim(n); }
   };
   const doAction = (aid: string) => {
     const r = act(simRef.current, aid), ok = r.sim !== simRef.current;
-    beep(ok ? "ok" : "fail"); setFlash({ id: Date.now(), ok });
+    play(ok ? soundForAction(aid) : "fail"); setFlash({ id: Date.now(), ok });
     const n = reward(r.sim); simRef.current = n; setSim(n); saveSim(n); if (r.msg) setPip(ok ? r.msg : `❌ ${r.msg}`);
   };
 
@@ -146,7 +192,8 @@ export function MarsGame() {
 
   const onDiscover = (l: Landmark) => setFound((f) => { const n = [...f, l.id]; setPip(`${l.name}: ${l.pip}`); return n; });
   const ev = eventOf(sim), info = EVENT_INFO[ev];
-  const warn = warnings(sim);
+  const alertList = sim.status === "day" ? priorities(sim) : [];
+  const urgent = alertList.filter((x) => x.level <= 3);
   const beginSol = () => { const s = nextSol(sim); setSim(s); saveSim(s); setBanner((b) => b + 1); const i = EVENT_INFO[eventOf(s)]; setPip(`Sol ${s.sol}: ${i.label}! ${i.tip}`); };
   const goal = OBJECTIVES[sim.objective];
   const restart = () => { const s = newSim(); toastRef.current = 0; setBriefing(true); setSim(s); saveSim(s); setPip(WELCOME); setBanner((b) => b + 1); };
@@ -174,9 +221,7 @@ export function MarsGame() {
 
   return (
     <div className="game-root fixed inset-0 overflow-hidden">
-      <GameCanvas character={character} input={input} onDiscover={onDiscover} posRef={pos} markersRef={markers} speedRef={speed} viewRef={view} onWorldClick={(x, y) => { if (station && !open && !sim.event && !briefing && hitStation(x, y, station)) { beep("open"); setOpen(true); } }} />
-      {(ev === "dust" || ev === "storm-flare") && sim.status === "day" && <div className="weather-dust pointer-events-none absolute inset-0" />}
-      {(ev === "flare" || ev === "storm-flare") && sim.status === "day" && <div className="weather-flare pointer-events-none absolute inset-0" />}
+      <GameCanvas character={character} input={input} onDiscover={onDiscover} posRef={pos} markersRef={markers} speedRef={speed} viewRef={view} fxRef={fx} navRef={nav} onWorldClick={(x, y) => { if (station && !open && !sim.event && !briefing && hitStation(x, y, station)) { beep("open"); setOpen(true); } }} />
       <div className="pointer-events-none absolute inset-0 p-2 text-hud-fg sm:p-3">
         <div className="flex items-start justify-between gap-2">
           <div className="hud-panel pointer-events-auto rounded-2xl px-3 py-2">
@@ -189,8 +234,18 @@ export function MarsGame() {
             <button onClick={() => { resetGame(); setPlaying(false); }} className="mt-1 text-xs underline decoration-dotted hover:text-accent">Restart / switch astronaut</button>
             <div className="mt-1 flex gap-1">
               <button onClick={() => setLogOpen((v) => (v === "log" ? "" : "log"))} className="rounded-lg bg-hud-ink/50 px-2 py-0.5 text-xs font-bold hover:bg-hud-ink">📜 Log</button>
+              <button onClick={() => setSettingsOpen((v) => !v)} aria-label="Sound and guidance settings" className="rounded-lg bg-hud-ink/50 px-2 py-0.5 text-xs font-bold hover:bg-hud-ink">{audio.muted ? "🔇" : "🔊"}</button>
               <button onClick={() => setLogOpen((v) => (v === "ach" ? "" : "ach"))} className="rounded-lg bg-hud-ink/50 px-2 py-0.5 text-xs font-bold hover:bg-hud-ink">⭐ {sim.achievements.length}/{ACHIEVEMENTS.length}</button>
             </div>
+            {settingsOpen && (
+              <div className="mt-1 w-56 space-y-1 text-xs">
+                <label className="flex items-center justify-between gap-2">🔇 Mute all <input type="checkbox" checked={audio.muted} onChange={(e) => updAudio({ muted: e.target.checked })} /></label>
+                <label className="flex items-center justify-between gap-2">🎵 Sound effects <input type="checkbox" checked={audio.sfx} onChange={(e) => updAudio({ sfx: e.target.checked })} /></label>
+                <label className="flex items-center justify-between gap-2">🚨 Alert sounds <input type="checkbox" checked={audio.alerts} onChange={(e) => updAudio({ alerts: e.target.checked })} /></label>
+                <label className="flex items-center justify-between gap-2">🔉 Volume <input type="range" min={0} max={1} step={0.1} value={audio.volume} onChange={(e) => updAudio({ volume: Number(e.target.value) })} className="w-24" /></label>
+                <label className="flex items-center justify-between gap-2">🧭 Guide arrows <input type="checkbox" checked={audio.nav} onChange={(e) => updAudio({ nav: e.target.checked })} /></label>
+              </div>
+            )}
             {logOpen === "log" && <ul className="mt-1 max-h-[40vh] w-64 space-y-0.5 overflow-y-auto pr-1 text-xs">{sim.log.map((l, i) => <li key={i}><span className="text-hud-muted">S{l.sol}</span> {l.icon} {l.text}</li>)}</ul>}
             {logOpen === "ach" && <ul className="mt-1 max-h-[40vh] w-64 space-y-0.5 overflow-y-auto text-xs">{ACHIEVEMENTS.map((a) => { const got = sim.achievements.includes(a.id); return <li key={a.id} className={got ? "font-bold text-accent" : "text-hud-muted"}>{got ? a.icon : "🔒"} {a.title}</li>; })}</ul>}
           </div>
@@ -209,9 +264,26 @@ export function MarsGame() {
           </div>
         </div>
         <div className="hud-panel mx-auto mt-2 flex w-fit max-w-full flex-wrap justify-center gap-x-3 gap-y-1 rounded-2xl px-3 py-1.5 lg:hidden">{resBar}</div>
-        {warn.length > 0 && (
-          <div className="mx-auto mt-2 flex w-fit max-w-full flex-wrap justify-center gap-1">
-            {warn.map((w) => <span key={w} className="animate-pulse rounded-full bg-destructive px-2 py-0.5 text-xs font-bold text-destructive-foreground">⚠️ {w}</span>)}
+        {sim.status === "day" && !briefing && (primary || alertList.length > 0) && (
+          <div className="mx-auto mt-2 w-fit max-w-[min(94vw,30rem)]">
+            {primary && (
+              <button onClick={() => setAlertsOpen((v) => !v)} className={`pointer-events-auto flex w-full items-center gap-2 rounded-full px-3 py-1 text-left text-xs font-bold sm:text-sm ${primary.level === 1 ? "animate-pulse bg-destructive text-destructive-foreground" : primary.level === 2 ? "bg-primary text-primary-foreground" : "hud-panel"}`}>
+                <span className="rounded-full bg-hud-ink/40 px-1.5 text-[10px] text-hud-fg">{LEVEL_NAMES[primary.level]}</span>
+                <span className="truncate">{primary.icon} {primary.level === 4 ? `Next: ${primary.title}` : primary.guide}</span>
+                <span className="ml-auto whitespace-nowrap text-[11px] underline">{urgent.length > 1 ? `+${urgent.length - 1} more` : "details"}</span>
+              </button>
+            )}
+            {alertsOpen && (
+              <ul className="hud-panel pointer-events-auto mt-1 max-h-[40dvh] space-y-1.5 overflow-y-auto rounded-2xl p-2 text-xs">
+                {alertList.map((a) => (
+                  <li key={a.id} className={`rounded-lg bg-hud-ink/40 px-2 py-1 ${a.id === primary?.id ? "ring-2 ring-accent" : ""}`}>
+                    <div className="font-bold"><span className={a.level === 1 ? "text-destructive" : a.level === 2 ? "text-primary" : "text-accent"}>{LEVEL_NAMES[a.level]}</span> {a.icon} {a.title}</div>
+                    <div className="text-hud-muted">Why: {a.why}</div>
+                    <div>👉 {a.action}{a.station ? ` (${STATION_NAMES[a.station]?.split(" · ")[0] ?? a.station})` : ""}</div>
+                  </li>
+                ))}
+              </ul>
+            )}
           </div>
         )}
 
