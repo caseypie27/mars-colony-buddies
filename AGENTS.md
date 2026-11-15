@@ -30,3 +30,4 @@ use the editor.
 <!-- LOVABLE:END -->
 
 - Survival simulation rules live in pure functions in src/game/sim.ts (tested in sim.test.ts); UI only calls tick/act so balance stays testable.
+- NASA DONKI uses a public read-only server function with allowlisted output and independent per-endpoint caches/retry backoff; secrets and upstream requests stay server-only, and NASA observations never alter the survival simulation.
